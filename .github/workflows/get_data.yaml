@@ -23,7 +23,9 @@ jobs:
           pipx install poetry
           poetry install
 
+      - name: Configure Poetry to use Python 3.12
+        run: poetry env use python3.12
+
       - name: Run get_data.py
         run: |
           poetry shell
-          poetry run python special_train/get_data.py
