@@ -1,0 +1,20 @@
+[tool.poetry]
+name = "special-train"
+version = "0.1.0"
+description = "Ethereum price prediction"
+authors = ["Zak Raicik"]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+polygon-api-client = "^1.14.2"
+ipykernel = "^6.29.5"
+python-dotenv = "^1.0.1"
+pandas = "^2.2.2"
+boto3 = "^1.34.148"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
