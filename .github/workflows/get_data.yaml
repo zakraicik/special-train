@@ -18,17 +18,10 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install Poetry
+      - name: Install Poetry & dependencies
         run: |
           pipx install poetry
-
-      - name: Generate requirements.txt
-        run: |
-          poetry export --without-hashes --format=requirements.txt > requirements.txt
-
-      - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
+          poetry install
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
@@ -38,4 +31,4 @@ jobs:
           aws-region: us-east-1
 
       - name: Run get_data.py
-        run: python path/to/your/get_data.py # Adjust this to the path of your script
+        run: poetry run python special_train/get_data.py
