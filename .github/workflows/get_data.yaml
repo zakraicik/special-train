@@ -18,17 +18,24 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install poetry
+      - name: Install Poetry
         run: |
           pipx install poetry
-          poetry install
 
-      - name: Configure Poetry to use Python 3.12
-        run: poetry env use python3.12
+      - name: Generate requirements.txt
+        run: |
+          poetry export --without-hashes --format=requirements.txt > requirements.txt
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
 
       - name: Run get_data.py
-        run: |
-          poetry run python special_train/get_data.py
-        env:
-          AWS_ACCESS_KEY: ${{ secrets.AWS_ACCESS_KEY }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: python path/to/your/get_data.py # Adjust this to the path of your script
