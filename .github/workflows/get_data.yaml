@@ -22,3 +22,8 @@ jobs:
         run: |
           pipx install poetry
           poetry install
+
+      - name: Run get_data.py
+        run: |
+          poetry shell
+          poetry run python special_train/get_data.py
