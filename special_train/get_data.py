@@ -2,29 +2,26 @@ import os
 import json
 import boto3
 import pandas as pd
-
 from polygon import RESTClient
 from botocore.exceptions import ClientError
 from io import StringIO
 from datetime import datetime, timedelta
 from special_train.config import (
-    AWS_PROFILE_NAME,
     AWS_REGION,
     S3_ETHEREUM_FORECAST_BUCKET,
 )
 
-# Determine if running in GitHub Actions
-is_github_actions = os.getenv("GITHUB_ACTIONS") == "true"
+aws_access_key_id = os.environ.get("AWS_ACCESS_KEY_ID")
+aws_secret_access_key = os.environ.get("AWS_SECRET_ACCESS_KEY")
 
-if is_github_actions:
-    session = boto3.session.Session()
-else:
-    session = boto3.session.Session(profile_name=AWS_PROFILE_NAME)
-
-aws_secret_client = session.client(
-    service_name="secretsmanager", region_name=AWS_REGION
+session = boto3.session.Session(
+    aws_access_key_id=aws_access_key_id,
+    aws_secret_access_key=aws_secret_access_key,
+    region_name=AWS_REGION,
 )
-aws_s3_client = session.client(service_name="s3", region_name=AWS_REGION)
+
+aws_secret_client = session.client(service_name="secretsmanager")
+aws_s3_client = session.client(service_name="s3")
 
 
 def get_aws_secret(SecretId):
@@ -40,10 +37,6 @@ def get_aws_secret(SecretId):
 
     except ClientError as e:
         raise e
-
-
-def to_s3(bucket, key, body):
-    pass
 
 
 def create_polygon_client(api_key):
