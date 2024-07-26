@@ -22,6 +22,7 @@ jobs:
         run: |
           pipx install poetry
           poetry install
+          poetry env use python3.12
 
       - name: Run get_data.py
         run: poetry run python special_train/get_data.py
