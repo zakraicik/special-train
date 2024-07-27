@@ -81,6 +81,6 @@ if __name__ == "__main__":
 
     aws_s3_client.put_object(
         Bucket=S3_ETHEREUM_FORECAST_BUCKET,
-        Key=f"data/ethereum_prices_{(end_date - timedelta(days=1)).strftime('%Y_%m_%d')}_{end_date.strftime('%Y_%m_%d')}.csv.gz",
+        Key=f"data/ethereum_prices_{(end_date - timedelta(days=7)).strftime('%Y_%m_%d')}_{end_date.strftime('%Y_%m_%d')}.csv.gz",
         Body=gzip_buffer.getvalue(),
     )
