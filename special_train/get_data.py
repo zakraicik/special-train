@@ -68,7 +68,7 @@ if __name__ == "__main__":
 
     df = get_prices(
         polygon_client,
-        start_date=(end_date - timedelta(days=1)).strftime("%Y-%m-%d"),
+        start_date=(end_date - timedelta(days=7)).strftime("%Y-%m-%d"),
         end_date=end_date.strftime("%Y-%m-%d"),
     )
 

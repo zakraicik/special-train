@@ -2,7 +2,7 @@ name: get_data
 
 on:
   schedule:
-    - cron: '0 0 * * *'
+    - cron: '0 0 * * 0'
 
 jobs:
   run-script:
