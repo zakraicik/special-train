@@ -1,10 +1,11 @@
 import os
 import json
 import boto3
+import gzip
 import pandas as pd
 from polygon import RESTClient
 from botocore.exceptions import ClientError
-from io import StringIO
+from io import StringIO, BytesIO
 from datetime import datetime, timedelta
 from special_train.config import (
     AWS_REGION,
@@ -47,8 +48,8 @@ def create_polygon_client(api_key):
 def get_prices(polygon_client, start_date, end_date):
     response = polygon_client.get_aggs(
         "X:ETHUSD",
-        1,
-        "day",
+        5,
+        "minute",
         start_date,
         end_date,
         limit=50000,
@@ -74,8 +75,12 @@ if __name__ == "__main__":
     csv_buffer = StringIO()
     df.to_csv(csv_buffer, index=False)
 
+    gzip_buffer = BytesIO()
+    with gzip.GzipFile(mode="w", fileobj=gzip_buffer) as gz_file:
+        gz_file.write(csv_buffer.getvalue().encode("utf-8"))
+
     aws_s3_client.put_object(
         Bucket=S3_ETHEREUM_FORECAST_BUCKET,
-        Key=f"data/ethereum_prices_{(end_date - timedelta(days=1)).strftime('%Y_%m_%d')}_{end_date.strftime('%Y_%m_%d')}",
-        Body=csv_buffer.getvalue(),
+        Key=f"data/ethereum_prices_{(end_date - timedelta(days=1)).strftime('%Y_%m_%d')}_{end_date.strftime('%Y_%m_%d')}.csv.gz",
+        Body=gzip_buffer.getvalue(),
     )
