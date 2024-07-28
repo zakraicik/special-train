@@ -47,12 +47,7 @@ def create_polygon_client(api_key):
 
 def get_prices(polygon_client, start_date, end_date):
     response = polygon_client.get_aggs(
-        "X:ETHUSD",
-        5,
-        "minute",
-        start_date,
-        end_date,
-        limit=50000,
+        "X:ETHUSD", 5, "minute", start_date, end_date, limit=50000
     )
 
     df = pd.DataFrame(response)
@@ -60,6 +55,7 @@ def get_prices(polygon_client, start_date, end_date):
 
 
 if __name__ == "__main__":
+
     end_date = datetime.today() - timedelta(days=1)
 
     polygon_api_key = get_aws_secret("ethereum-price-forecast")
