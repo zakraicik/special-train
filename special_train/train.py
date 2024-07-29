@@ -55,5 +55,5 @@ if __name__ == "__main__":
     df = download_and_extract_csv(S3_ETHEREUM_FORECAST_BUCKET, keys)
 
     assert (
-        df["timestamp_diff"].iloc[1:] == 300000
+        df["timestamp"].diff().iloc[1:] == 300000
     ).all(), "Inconsistent intervals in training data"
