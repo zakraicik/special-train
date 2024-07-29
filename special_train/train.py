@@ -45,7 +45,7 @@ def download_and_extract_csv(bucket_name, keys):
         with gzip.GzipFile(fileobj=BytesIO(response["Body"].read())) as f:
             df = pd.read_csv(f)
             dataframes.append(df)
-    return pd.concat(dataframes, ignore_index=True)
+    return pd.concat(dataframes, ignore_index=True).drop_duplicates(subset="timestamp")
 
 
 if __name__ == "__main__":
@@ -54,4 +54,6 @@ if __name__ == "__main__":
 
     df = download_and_extract_csv(S3_ETHEREUM_FORECAST_BUCKET, keys)
 
-    df["date"] = df["timestamp"].apply(convert_millisecond_to_date)
+    assert (
+        df["timestamp_diff"].iloc[1:] == 300000
+    ).all(), "Inconsistent intervals in training data"
