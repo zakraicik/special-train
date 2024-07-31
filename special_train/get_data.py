@@ -119,6 +119,6 @@ if __name__ == "__main__":
 
     aws_s3_client.put_object(
         Bucket=S3_ETHEREUM_FORECAST_BUCKET,
-        Key=f"data/training_data.csv.gz",
+        Key=f"data/ethereum_prices_all_time.csv.gz",
         Body=gzip_buffer.getvalue(),
     )
