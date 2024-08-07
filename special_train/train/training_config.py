@@ -58,4 +58,5 @@ FEATURE_CONFIG = {
 LAG_PERIODS = [1, 2, 3, 5, 10, 30, 60, 120, 288, 864]
 
 RAW_COLUMNS = ["open", "high", "low", "close", "volume", "vwap", "transactions"]
+
 TARGET = "next_period_close_change"

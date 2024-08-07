@@ -177,7 +177,7 @@ def apply_pivot_points(df, settings, new_features):
     return new_features
 
 
-feature_functions = {
+technical_indicator_functions = {
     "sma": apply_sma,
     "ema": apply_ema,
     "rsi": apply_rsi,
@@ -190,13 +190,3 @@ feature_functions = {
     "cmf": apply_cmf,
     "pivot_points": apply_pivot_points,
 }
-
-
-def generate_training_features(df, config):
-    new_features = {}
-    for feature, settings in config.items():
-        if feature in feature_functions:
-            new_features = feature_functions[feature](df, settings, new_features)
-    new_features_df = pd.DataFrame(new_features)
-    df = pd.concat([df, new_features_df], axis=1)
-    return df
