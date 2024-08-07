@@ -1,51 +1,28 @@
-import gzip
+import os
+import boto3
 import logging
 import pandas as pd
 import numpy as np
-from io import BytesIO, StringIO
+
+from joblib import Parallel, delayed
 from sklearn.preprocessing import MinMaxScaler
 
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, Dense, Dropout
-from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.callbacks import EarlyStopping
-
-from special_train.train.training_config import FEATURE_CONFIG, LAG_PERIODS, TARGET
-from special_train.train.technical_indicators import technical_indicator_functions
+from special_train.config import SEQUENCE_LENGTH, TARGET
+from special_train.utils import (
+    validate_timestamps,
+    load_raw_data,
+)
+from special_train.config import (
+    AWS_REGION,
+    S3_ETHEREUM_FORECAST_BUCKET,
+    S3_ETHEREUM_CONSOLIDATED_RAW_PRICE_DATA_KEY,
+    FEATURE_CONFIG,
+    LAG_PERIODS,
+)
+from special_train.data.technical_indicators import technical_indicator_functions
 
 logging.basicConfig(level=logging.INFO, force=True)
 logger = logging.getLogger(__name__)
-
-
-def load_raw_data(aws_s3_client, bucket, key):
-
-    response = aws_s3_client.get_object(Bucket=bucket, Key=key)
-
-    logger.info("Downloading raw data from S3...")
-
-    gzip_buffer = BytesIO(response["Body"].read())
-
-    with gzip.GzipFile(fileobj=gzip_buffer, mode="rb") as gz_file:
-        csv_content = gz_file.read().decode("utf-8")
-
-    training_data = pd.read_csv(StringIO(csv_content))
-
-    logger.info(f"Dataset Size: {training_data.shape}")
-    logger.info("Creating target...")
-
-    training_data["next_period_close_change"] = (
-        training_data["close"].pct_change().shift(-1)
-    )
-
-    logger.info("Reindexing... ")
-
-    training_data.drop(columns=["otc"], inplace=True)
-
-    training_data.dropna(inplace=True)
-
-    training_data.set_index("timestamp", inplace=True)
-
-    return training_data
 
 
 def generate_technical_indicators(df, config):
@@ -107,21 +84,9 @@ def create_model_features(raw_data):
     return df, model_features
 
 
-def validate_timestamps(df):
-    df.index = pd.to_datetime(df.index, unit="ms")
-
-    df.sort_index(inplace=True)
-
-    time_diffs = df.index.to_series().diff().dropna()
-
-    assert (
-        time_diffs == pd.Timedelta(minutes=5)
-    ).all(), "Not all rows are 5 minutes apart"
-
-    return df
-
-
 def split_data(df, train_size):
+
+    logger.info("Splitting datasets...")
 
     assert 0 < train_size < 1, "train_size must be a float between 0 and 1"
 
@@ -139,6 +104,8 @@ def split_data(df, train_size):
 
 def scale_datasets(train_df, test_df, val_df, feature_columns):
 
+    logger.info("Scaling datasets...")
+
     scaler = MinMaxScaler()
 
     train_df.loc[:, feature_columns] = scaler.fit_transform(train_df[feature_columns])
@@ -150,22 +117,51 @@ def scale_datasets(train_df, test_df, val_df, feature_columns):
 
 
 def create_sequences(df, seq_length, target_column):
-    X, y = [], []
-    for i in range(len(df) - seq_length):
-        X.append(df.iloc[i : i + seq_length].values)
-        y.append(df.iloc[i + seq_length][target_column])
-    return np.array(X), np.array(y)
+    logger.info("Creating sequences...")
 
+    data = df.values
 
-def build_model(input_shape, output_shape):
-    model = Sequential(
-        [
-            LSTM(64, return_sequences=True, input_shape=input_shape),
-            Dropout(0.2),
-            LSTM(32),
-            Dropout(0.2),
-            Dense(output_shape),
-        ]
+    def create_sequence(i):
+        return data[i : i + seq_length]
+
+    X = Parallel(n_jobs=-1)(
+        delayed(create_sequence)(i) for i in range(len(df) - seq_length)
     )
-    model.compile(optimizer=Adam(), loss="mse", metrics=["mae"])
-    return model
+    X = np.array(X)
+
+    y = data[seq_length:, df.columns.get_loc(target_column)]
+
+    return X, y
+
+
+if __name__ == "__main__":
+    aws_access_key = os.environ.get("AWS_ACCESS_KEY")
+    aws_secret_access_key = os.environ.get("AWS_SECRET_ACCESS_KEY")
+
+    session = boto3.Session(
+        aws_access_key_id=aws_access_key,
+        aws_secret_access_key=aws_secret_access_key,
+        region_name=AWS_REGION,
+    )
+
+    aws_s3_client = session.client(service_name="s3")
+
+    df = load_raw_data(
+        aws_s3_client,
+        S3_ETHEREUM_FORECAST_BUCKET,
+        S3_ETHEREUM_CONSOLIDATED_RAW_PRICE_DATA_KEY,
+    )
+
+    df, model_features = create_model_features(df)
+
+    df = validate_timestamps(df)
+
+    train_df, val_df, test_df = split_data(df, 0.8)
+
+    train_df, val_df, test_df = scale_datasets(
+        train_df, val_df, test_df, model_features
+    )
+
+    X_train, y_train = create_sequences(train_df, SEQUENCE_LENGTH, TARGET)
+    X_val, y_val = create_sequences(val_df, SEQUENCE_LENGTH, TARGET)
+    X_test, y_test = create_sequences(test_df, SEQUENCE_LENGTH, TARGET)

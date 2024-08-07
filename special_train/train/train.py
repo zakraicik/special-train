@@ -1,9 +1,10 @@
 import os
 import boto3
+import argparse
 from tensorflow.keras.callbacks import EarlyStopping
 
 from special_train.train.training_config import SEQUENCE_LENGTH, TARGET
-from special_train.train.train_utils import (
+from special_train.train.utils import (
     validate_timestamps,
     load_raw_data,
     create_model_features,
@@ -19,36 +20,28 @@ from special_train.config import (
     S3_ETHEREUM_PRICES,
 )
 
-aws_access_key = os.environ.get("AWS_ACCESS_KEY")
-aws_secret_access_key = os.environ.get("AWS_SECRET_ACCESS_KEY")
 
-session = boto3.Session(
-    aws_access_key_id=aws_access_key,
-    aws_secret_access_key=aws_secret_access_key,
-    region_name=AWS_REGION,
-)
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--epochs", type=int, default=100)
+    parser.add_argument("--batch-size", type=int, default=32)
+    parser.add_argument("--learning-rate", type=float, default=0.001)
+    return parser.parse_args()
 
-aws_s3_client = session.client(service_name="s3")
 
 if __name__ == "__main__":
+    args = parse_args()
 
-    df = load_raw_data(aws_s3_client, S3_ETHEREUM_FORECAST_BUCKET, S3_ETHEREUM_PRICES)
+    aws_access_key = os.environ.get("AWS_ACCESS_KEY")
+    aws_secret_access_key = os.environ.get("AWS_SECRET_ACCESS_KEY")
 
-    df, model_features = create_model_features(df)
-
-    df = validate_timestamps(df)
-
-    train_df, val_df, test_df = split_data(df, 0.8)
-
-    train_df, val_df, test_df = scale_datasets(
-        train_df, val_df, test_df, model_features
+    session = boto3.Session(
+        aws_access_key_id=aws_access_key,
+        aws_secret_access_key=aws_secret_access_key,
+        region_name=AWS_REGION,
     )
 
-    X_train, y_train = create_sequences(train_df, SEQUENCE_LENGTH, TARGET)
-
-    X_val, y_val = create_sequences(val_df, SEQUENCE_LENGTH, TARGET)
-
-    X_test, y_test = create_sequences(test_df, SEQUENCE_LENGTH, TARGET)
+    aws_s3_client = session.client(service_name="s3")
 
     model = build_model((SEQUENCE_LENGTH, len(model_features)), 1)
 
@@ -57,8 +50,8 @@ if __name__ == "__main__":
     history = model.fit(
         X_train,
         y_train,
-        epochs=100,
-        batch_size=32,
+        epochs=args.epochs,
+        batch_size=args["batch-size"],
         validation_data=(X_val, y_val),
         callbacks=[early_stopping],
     )

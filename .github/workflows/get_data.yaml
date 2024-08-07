@@ -24,7 +24,7 @@ jobs:
           poetry env use python3.12
 
       - name: Run get_data.py
-        run: poetry run python special_train/get_data.py
+        run: poetry run python special_train/data/get_data.py
         env:
           AWS_ACCESS_KEY: ${{ secrets.AWS_ACCESS_KEY }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}

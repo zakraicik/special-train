@@ -9,7 +9,9 @@ from io import StringIO, BytesIO
 from datetime import datetime, timedelta
 from special_train.config import (
     AWS_REGION,
+    SECRET_POLYGON_KEY,
     S3_ETHEREUM_FORECAST_BUCKET,
+    S3_ETHEREUM_CONSOLIDATED_RAW_PRICE_DATA_KEY,
 )
 
 aws_access_key = os.environ.get("AWS_ACCESS_KEY")
@@ -79,7 +81,7 @@ if __name__ == "__main__":
 
     end_date = datetime.today() - timedelta(days=1)
 
-    polygon_api_key = get_aws_secret("ethereum-price-forecast")
+    polygon_api_key = get_aws_secret(SECRET_POLYGON_KEY)
 
     polygon_client = create_polygon_client(polygon_api_key)
 
@@ -104,14 +106,14 @@ if __name__ == "__main__":
 
     keys = get_bucket_contents(S3_ETHEREUM_FORECAST_BUCKET)
 
-    training_data = concat_training_data(S3_ETHEREUM_FORECAST_BUCKET, keys)
+    raw_data = concat_training_data(S3_ETHEREUM_FORECAST_BUCKET, keys)
 
     assert (
-        training_data["timestamp"].diff().iloc[1:] == 300000
+        raw_data["timestamp"].diff().iloc[1:] == 300000
     ).all(), "Inconsistent intervals in training data"
 
     csv_buffer = StringIO()
-    training_data.to_csv(csv_buffer, index=False)
+    raw_data.to_csv(csv_buffer, index=False)
 
     gzip_buffer = BytesIO()
     with gzip.GzipFile(mode="w", fileobj=gzip_buffer) as gz_file:
@@ -119,6 +121,6 @@ if __name__ == "__main__":
 
     aws_s3_client.put_object(
         Bucket=S3_ETHEREUM_FORECAST_BUCKET,
-        Key=f"data/ethereum_prices_all_time.csv.gz",
+        Key=S3_ETHEREUM_CONSOLIDATED_RAW_PRICE_DATA_KEY,
         Body=gzip_buffer.getvalue(),
     )
