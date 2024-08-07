@@ -3,11 +3,9 @@ import boto3
 import logging
 import pandas as pd
 import numpy as np
-
-from joblib import Parallel, delayed
 from sklearn.preprocessing import MinMaxScaler
 
-from special_train.config import SEQUENCE_LENGTH, TARGET
+from special_train.config import TARGET
 from special_train.utils import (
     validate_timestamps,
     load_raw_data,
