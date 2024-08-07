@@ -133,6 +133,8 @@ if __name__ == "__main__":
 
     df = validate_timestamps(df)
 
+    df.dropna(inplace=True)
+
     train_df, val_df, test_df = split_data(df, 0.8)
 
     train_df, val_df, test_df = scale_datasets(
