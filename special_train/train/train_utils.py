@@ -1,8 +1,15 @@
 import gzip
 import logging
 import pandas as pd
+import numpy as np
 from io import BytesIO, StringIO
 from sklearn.preprocessing import MinMaxScaler
+
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import LSTM, Dense, Dropout
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.callbacks import EarlyStopping
+
 from special_train.train.training_config import FEATURE_CONFIG, LAG_PERIODS, TARGET
 from special_train.train.technical_indicators import technical_indicator_functions
 
@@ -121,16 +128,17 @@ def split_data(df, train_size):
     n = len(df)
     train_end = int(train_size * n)
     remainder = n - train_end
-    test_end = train_end + remainder // 2
+    val_end = train_end + remainder // 2
 
     train_df = df.iloc[:train_end]
-    test_df = df.iloc[train_end:test_end]
-    val_df = df.iloc[test_end:]
+    val_df = df.iloc[train_end:val_end]
+    test_df = df.iloc[val_end:]
 
-    return train_df, test_df, val_df
+    return train_df, val_df, test_df
 
 
 def scale_datasets(train_df, test_df, val_df, feature_columns):
+
     scaler = MinMaxScaler()
 
     train_df.loc[:, feature_columns] = scaler.fit_transform(train_df[feature_columns])
@@ -139,3 +147,25 @@ def scale_datasets(train_df, test_df, val_df, feature_columns):
     val_df.loc[:, feature_columns] = scaler.transform(val_df[feature_columns])
 
     return train_df, test_df, val_df
+
+
+def create_sequences(df, seq_length, target_column):
+    X, y = [], []
+    for i in range(len(df) - seq_length):
+        X.append(df.iloc[i : i + seq_length].values)
+        y.append(df.iloc[i + seq_length][target_column])
+    return np.array(X), np.array(y)
+
+
+def build_model(input_shape, output_shape):
+    model = Sequential(
+        [
+            LSTM(64, return_sequences=True, input_shape=input_shape),
+            Dropout(0.2),
+            LSTM(32),
+            Dropout(0.2),
+            Dense(output_shape),
+        ]
+    )
+    model.compile(optimizer=Adam(), loss="mse", metrics=["mae"])
+    return model
