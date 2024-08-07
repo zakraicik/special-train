@@ -1,20 +1,55 @@
+import os
 import sagemaker
+import boto3
 from sagemaker.tensorflow import TensorFlow
-
-s3_input_train = "s3://your-bucket/path-to-train-data"
-s3_input_test = "s3://your-bucket/path-to-test-data"
-s3_output_path = "s3://your-bucket/path-to-model-output"
-
-tf_estimator = TensorFlow(
-    entry_point="train.py",
-    role="your-sagemaker-role",
-    instance_count=1,
-    instance_type="ml.p2.xlarge",  # or another instance type with GPU
-    framework_version="2.6.0",
-    py_version="py37",
-    hyperparameters={"epochs": 10, "batch-size": 64, "learning-rate": 0.001},
-    output_path=s3_output_path,
-    sagemaker_session=sagemaker.Session(),
+from special_train.config import (
+    S3_ETHEREUM_FORECAST_BUCKET,
+    S3_TRAIN_KEY,
+    S3_TEST_KEY,
+    S3_VAL_KEY,
+    AWS_REGION,
 )
 
-tf_estimator.fit({"train": s3_input_train, "test": s3_input_test})
+
+def launch_training():
+    aws_access_key = os.environ.get("AWS_ACCESS_KEY")
+    aws_secret_access_key = os.environ.get("AWS_SECRET_ACCESS_KEY")
+
+    session = boto3.Session(
+        aws_access_key_id=aws_access_key,
+        aws_secret_access_key=aws_secret_access_key,
+        region_name=AWS_REGION,
+    )
+
+    sagemaker_session = sagemaker.Session(boto_session=session)
+
+    role = "sagemaker_role_arn"
+
+    estimator = TensorFlow(
+        entry_point="train.py",
+        source_dir="./special_train",
+        role=role,
+        instance_count=1,
+        instance_type="ml.c5.xlarge",
+        framework_version="2.6.0",
+        py_version="py38",
+        hyperparameters={
+            "epochs": 100,
+            "batch-size": 32,
+            "learning-rate": 0.001,
+            "lstm-units": 64,
+            "sequence-length": 24,
+        },
+    )
+
+    estimator.fit(
+        {
+            "train": f"s3://{S3_ETHEREUM_FORECAST_BUCKET}/{S3_TRAIN_KEY}",
+            "valid": f"s3://{S3_ETHEREUM_FORECAST_BUCKET}/{S3_VAL_KEY}",
+            "test": f"s3://{S3_ETHEREUM_FORECAST_BUCKET}/{S3_TEST_KEY}",
+        }
+    )
+
+
+if __name__ == "__main__":
+    launch_training()
