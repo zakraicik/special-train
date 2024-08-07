@@ -74,8 +74,6 @@ def create_model_features(raw_data):
     logger.info("Dropping rows with null")
     starting_n_rows = df.shape[0]
 
-    df.dropna(inplace=True)
-
     ending_n_rows = df.shape[0]
 
     logger.info(f"Dropped {ending_n_rows - starting_n_rows} rows.")
@@ -116,24 +114,6 @@ def scale_datasets(train_df, test_df, val_df, feature_columns):
     return train_df, test_df, val_df
 
 
-def create_sequences(df, seq_length, target_column):
-    logger.info("Creating sequences...")
-
-    data = df.values
-
-    def create_sequence(i):
-        return data[i : i + seq_length]
-
-    X = Parallel(n_jobs=-1)(
-        delayed(create_sequence)(i) for i in range(len(df) - seq_length)
-    )
-    X = np.array(X)
-
-    y = data[seq_length:, df.columns.get_loc(target_column)]
-
-    return X, y
-
-
 if __name__ == "__main__":
     aws_access_key = os.environ.get("AWS_ACCESS_KEY")
     aws_secret_access_key = os.environ.get("AWS_SECRET_ACCESS_KEY")
@@ -161,7 +141,3 @@ if __name__ == "__main__":
     train_df, val_df, test_df = scale_datasets(
         train_df, val_df, test_df, model_features
     )
-
-    X_train, y_train = create_sequences(train_df, SEQUENCE_LENGTH, TARGET)
-    X_val, y_val = create_sequences(val_df, SEQUENCE_LENGTH, TARGET)
-    X_test, y_test = create_sequences(test_df, SEQUENCE_LENGTH, TARGET)
