@@ -3,6 +3,8 @@ import boto3
 import logging
 import pandas as pd
 import numpy as np
+
+from io import StringIO
 from sklearn.preprocessing import MinMaxScaler
 
 from special_train.config import TARGET
@@ -14,6 +16,9 @@ from special_train.config import (
     AWS_REGION,
     S3_ETHEREUM_FORECAST_BUCKET,
     S3_ETHEREUM_CONSOLIDATED_RAW_PRICE_DATA_KEY,
+    S3_TRAIN_KEY,
+    S3_VAL_KEY,
+    S3_TEST_KEY,
     FEATURE_CONFIG,
     LAG_PERIODS,
 )
@@ -69,13 +74,7 @@ def create_model_features(raw_data):
 
     df[model_features] = df[model_features].diff()
 
-    logger.info("Dropping rows with null")
-    starting_n_rows = df.shape[0]
-
-    ending_n_rows = df.shape[0]
-
-    logger.info(f"Dropped {ending_n_rows - starting_n_rows} rows.")
-    logger.info("Engineered dataset created.")
+    logger.info("Engineered dataset created with nulls")
 
     return df, model_features
 
@@ -138,4 +137,27 @@ if __name__ == "__main__":
 
     train_df, val_df, test_df = scale_datasets(
         train_df, val_df, test_df, model_features
+    )
+
+    logger.info(
+        f"Writing train_df to s3://{S3_ETHEREUM_FORECAST_BUCKET}/{S3_TRAIN_KEY}"
+    )
+    csv_buffer = StringIO()
+    train_df.to_csv(csv_buffer, index=False)
+    aws_s3_client.put_object(
+        Bucket=S3_ETHEREUM_FORECAST_BUCKET, Key=S3_TRAIN_KEY, Body=csv_buffer.getvalue()
+    )
+
+    logger.info(f"Writing val_df to s3://{S3_ETHEREUM_FORECAST_BUCKET}/{S3_VAL_KEY}")
+    csv_buffer = StringIO()
+    val_df.to_csv(csv_buffer, index=False)
+    aws_s3_client.put_object(
+        Bucket=S3_ETHEREUM_FORECAST_BUCKET, Key=S3_VAL_KEY, Body=csv_buffer.getvalue()
+    )
+
+    logger.info(f"Writing test_df to s3://{S3_ETHEREUM_FORECAST_BUCKET}/{S3_TEST_KEY}")
+    csv_buffer = StringIO()
+    test_df.to_csv(csv_buffer, index=False)
+    aws_s3_client.put_object(
+        Bucket=S3_ETHEREUM_FORECAST_BUCKET, Key=S3_TEST_KEY, Body=csv_buffer.getvalue()
     )
