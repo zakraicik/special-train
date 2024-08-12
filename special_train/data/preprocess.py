@@ -1,17 +1,11 @@
 import os
-import boto3
 import logging
 import pandas as pd
-import numpy as np
-
-from io import StringIO
+from boto3 import Session
 from sklearn.preprocessing import MinMaxScaler
 
 from special_train.config import TARGET
-from special_train.utils import (
-    validate_timestamps,
-    load_raw_data,
-)
+from special_train.utils import validate_timestamps, load_raw_data, parquet_to_s3
 from special_train.config import (
     AWS_REGION,
     S3_ETHEREUM_FORECAST_BUCKET,
@@ -41,40 +35,27 @@ def generate_technical_indicators(df, config):
 
 
 def create_model_features(raw_data):
-
     logger.info("Creating technical indicators")
-
-    starting_n_columns = raw_data.shape[1]
 
     df = generate_technical_indicators(raw_data, FEATURE_CONFIG)
 
-    ending_n_columns = df.shape[1]
+    logger.info(f"Added {df.shape[1] - raw_data.shape[1]} columns.")
+    logger.info("Creating lagged columns")
 
-    logger.info(f"Added {ending_n_columns - starting_n_columns} columns.")
-    logger.info(f"Creating lagged columns ")
-
-    starting_n_columns = df.shape[1]
     features = [x for x in df.columns if x != TARGET]
-    lagged_features = []
 
-    for column in features:
-        for lag in LAG_PERIODS:
-            lagged_feature = df[column].shift(lag)
-            lagged_feature.name = f"{column}_lag_{lag}"
-            lagged_features.append(lagged_feature)
+    lagged_dfs = [
+        df[features].shift(lag).add_suffix(f"_lag_{lag}") for lag in LAG_PERIODS
+    ]
 
-    df = pd.concat([df] + lagged_features, axis=1)
+    df = pd.concat([df] + lagged_dfs, axis=1)
 
-    ending_n_columns = df.shape[1]
-
-    logger.info(f"Added {ending_n_columns - starting_n_columns} columns.")
+    logger.info(f"Added {df.shape[1] - len(features)} lagged columns.")
     logger.info("Differencing engineered features")
 
     model_features = features + [col for col in df.columns if "lag" in col]
 
     df[model_features] = df[model_features].diff()
-
-    logger.info("Engineered dataset created with nulls")
 
     return df, model_features
 
@@ -97,16 +78,16 @@ def split_data(df, train_size):
     return train_df, val_df, test_df
 
 
-def scale_datasets(train_df, test_df, val_df, feature_columns):
+def scale_datasets(train_df, test_df, val_df, model_features):
 
     logger.info("Scaling datasets...")
 
     scaler = MinMaxScaler()
 
-    train_df.loc[:, feature_columns] = scaler.fit_transform(train_df[feature_columns])
+    train_df.loc[:, model_features] = scaler.fit_transform(train_df[model_features])
 
-    test_df.loc[:, feature_columns] = scaler.transform(test_df[feature_columns])
-    val_df.loc[:, feature_columns] = scaler.transform(val_df[feature_columns])
+    test_df.loc[:, model_features] = scaler.transform(test_df[model_features])
+    val_df.loc[:, model_features] = scaler.transform(val_df[model_features])
 
     return train_df, test_df, val_df
 
@@ -115,7 +96,7 @@ if __name__ == "__main__":
     aws_access_key = os.environ.get("AWS_ACCESS_KEY")
     aws_secret_access_key = os.environ.get("AWS_SECRET_ACCESS_KEY")
 
-    session = boto3.Session(
+    session = Session(
         aws_access_key_id=aws_access_key,
         aws_secret_access_key=aws_secret_access_key,
         region_name=AWS_REGION,
@@ -135,31 +116,21 @@ if __name__ == "__main__":
 
     df.dropna(inplace=True)
 
+    logger.info(f"Engineered Dataset Size: {df.shape}")
+
     train_df, val_df, test_df = split_data(df, 0.8)
 
     train_df, val_df, test_df = scale_datasets(
         train_df, val_df, test_df, model_features
     )
 
-    logger.info(
-        f"Writing train_df to s3://{S3_ETHEREUM_FORECAST_BUCKET}/{S3_TRAIN_KEY}"
-    )
-    csv_buffer = StringIO()
-    train_df.to_csv(csv_buffer, index=False)
-    aws_s3_client.put_object(
-        Bucket=S3_ETHEREUM_FORECAST_BUCKET, Key=S3_TRAIN_KEY, Body=csv_buffer.getvalue()
-    )
+    # logger.info(
+    #     f"Writing train_df to s3://{S3_ETHEREUM_FORECAST_BUCKET}/{S3_TRAIN_KEY}"
+    # )
+    # parquet_to_s3(train_df, S3_ETHEREUM_FORECAST_BUCKET, S3_TRAIN_KEY, aws_s3_client)
 
-    logger.info(f"Writing val_df to s3://{S3_ETHEREUM_FORECAST_BUCKET}/{S3_VAL_KEY}")
-    csv_buffer = StringIO()
-    val_df.to_csv(csv_buffer, index=False)
-    aws_s3_client.put_object(
-        Bucket=S3_ETHEREUM_FORECAST_BUCKET, Key=S3_VAL_KEY, Body=csv_buffer.getvalue()
-    )
+    # logger.info(f"Writing val_df to s3://{S3_ETHEREUM_FORECAST_BUCKET}/{S3_VAL_KEY}")
+    # parquet_to_s3(val_df, S3_ETHEREUM_FORECAST_BUCKET, S3_VAL_KEY, aws_s3_client)
 
-    logger.info(f"Writing test_df to s3://{S3_ETHEREUM_FORECAST_BUCKET}/{S3_TEST_KEY}")
-    csv_buffer = StringIO()
-    test_df.to_csv(csv_buffer, index=False)
-    aws_s3_client.put_object(
-        Bucket=S3_ETHEREUM_FORECAST_BUCKET, Key=S3_TEST_KEY, Body=csv_buffer.getvalue()
-    )
+    # logger.info(f"Writing test_df to s3://{S3_ETHEREUM_FORECAST_BUCKET}/{S3_TEST_KEY}")
+    # parquet_to_s3(test_df, S3_ETHEREUM_FORECAST_BUCKET, S3_TEST_KEY, aws_s3_client)
