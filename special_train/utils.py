@@ -1,10 +1,9 @@
 import pandas as pd
 from datetime import datetime
-import gzip
 import logging
 import pandas as pd
-import numpy as np
-from io import BytesIO, StringIO
+
+from io import BytesIO
 
 logging.basicConfig(level=logging.INFO, force=True)
 logger = logging.getLogger(__name__)
@@ -28,18 +27,28 @@ def convert_date_to_millisecond(date_time):
     return millisecond_timestamp
 
 
-def load_raw_data(aws_s3_client, bucket, key):
+def parquet_to_s3(df, bucket, key, aws_s3_client):
+    out_buffer = BytesIO()
+    df.to_parquet(out_buffer, index=True)
 
-    response = aws_s3_client.get_object(Bucket=bucket, Key=key)
+    out_buffer.seek(0)
+
+    aws_s3_client.upload_fileobj(
+        Fileobj=out_buffer,
+        Bucket=bucket,
+        Key=key,
+        ExtraArgs={"ContentType": "binary/octet-stream"},
+    )
+
+
+def load_raw_data(aws_s3_client, bucket, key):
 
     logger.info("Downloading raw data from S3...")
 
-    gzip_buffer = BytesIO(response["Body"].read())
+    response = aws_s3_client.get_object(Bucket=bucket, Key=key)
+    parquet_buffer = BytesIO(response["Body"].read())
 
-    with gzip.GzipFile(fileobj=gzip_buffer, mode="rb") as gz_file:
-        csv_content = gz_file.read().decode("utf-8")
-
-    training_data = pd.read_csv(StringIO(csv_content))
+    training_data = pd.read_parquet(parquet_buffer)
 
     logger.info(f"Dataset Size: {training_data.shape}")
     logger.info("Creating target...")
@@ -51,7 +60,6 @@ def load_raw_data(aws_s3_client, bucket, key):
     logger.info("Reindexing... ")
 
     training_data.drop(columns=["otc"], inplace=True)
-
     training_data.dropna(inplace=True)
 
     training_data.set_index("timestamp", inplace=True)

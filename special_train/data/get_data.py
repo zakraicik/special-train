@@ -1,12 +1,12 @@
 import os
 import json
 import boto3
-import gzip
 import pandas as pd
 from polygon import RESTClient
+from io import BytesIO
 from botocore.exceptions import ClientError
-from io import StringIO, BytesIO
 from datetime import datetime, timedelta
+from special_train.utils import parquet_to_s3
 from special_train.config import (
     AWS_REGION,
     SECRET_POLYGON_KEY,
@@ -42,15 +42,12 @@ def get_aws_secret(SecretId):
         raise e
 
 
-def get_bucket_contents(bucket_name):
+def get_bucket_contents(bucket_name, prefix, aws_s3_client):
+    response = aws_s3_client.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
 
-    contents = aws_s3_client.list_objects_v2(Bucket=bucket_name, Prefix="data")[
-        "Contents"
-    ]
+    keys = [content["Key"] for content in response.get("Contents", [])]
 
-    keys = [x["Key"] for x in contents]
-
-    return keys
+    return [key for key in keys if not key.endswith("/")]
 
 
 def create_polygon_client(api_key):
@@ -67,14 +64,21 @@ def get_prices(polygon_client, start_date, end_date):
     return df
 
 
-def concat_training_data(bucket_name, keys):
+def concat_training_data(bucket_name, keys, aws_s3_client):
     dataframes = []
     for key in keys:
         response = aws_s3_client.get_object(Bucket=bucket_name, Key=key)
-        with gzip.GzipFile(fileobj=BytesIO(response["Body"].read())) as f:
-            df = pd.read_csv(f)
-            dataframes.append(df)
-    return pd.concat(dataframes, ignore_index=True).drop_duplicates(subset="timestamp")
+
+        parquet_buffer = BytesIO(response["Body"].read())
+        df = pd.read_parquet(parquet_buffer)
+
+        dataframes.append(df)
+
+    df = pd.concat(dataframes, ignore_index=True).drop_duplicates(subset="timestamp")
+
+    df.sort_values(by="timestamp", ascending=True, inplace=True)
+
+    return df
 
 
 if __name__ == "__main__":
@@ -91,36 +95,24 @@ if __name__ == "__main__":
         end_date=end_date.strftime("%Y-%m-%d"),
     )
 
-    csv_buffer = StringIO()
-    df.to_csv(csv_buffer, index=False)
-
-    gzip_buffer = BytesIO()
-    with gzip.GzipFile(mode="w", fileobj=gzip_buffer) as gz_file:
-        gz_file.write(csv_buffer.getvalue().encode("utf-8"))
-
-    aws_s3_client.put_object(
-        Bucket=S3_ETHEREUM_FORECAST_BUCKET,
-        Key=f"data/ethereum_prices_{(end_date - timedelta(days=7)).strftime('%Y_%m_%d')}_{end_date.strftime('%Y_%m_%d')}.csv.gz",
-        Body=gzip_buffer.getvalue(),
+    parquet_to_s3(
+        df,
+        S3_ETHEREUM_FORECAST_BUCKET,
+        f"raw_data/ethereum_prices_{(end_date - timedelta(days=7)).strftime('%Y_%m_%d')}_{end_date.strftime('%Y_%m_%d')}.parquet",
+        aws_s3_client,
     )
 
-    keys = get_bucket_contents(S3_ETHEREUM_FORECAST_BUCKET)
+    keys = get_bucket_contents(S3_ETHEREUM_FORECAST_BUCKET, "raw_data", aws_s3_client)
 
-    raw_data = concat_training_data(S3_ETHEREUM_FORECAST_BUCKET, keys)
+    raw_data = concat_training_data(S3_ETHEREUM_FORECAST_BUCKET, keys, aws_s3_client)
 
     assert (
         raw_data["timestamp"].diff().iloc[1:] == 300000
     ).all(), "Inconsistent intervals in training data"
 
-    csv_buffer = StringIO()
-    raw_data.to_csv(csv_buffer, index=False)
-
-    gzip_buffer = BytesIO()
-    with gzip.GzipFile(mode="w", fileobj=gzip_buffer) as gz_file:
-        gz_file.write(csv_buffer.getvalue().encode("utf-8"))
-
-    aws_s3_client.put_object(
-        Bucket=S3_ETHEREUM_FORECAST_BUCKET,
-        Key=S3_ETHEREUM_CONSOLIDATED_RAW_PRICE_DATA_KEY,
-        Body=gzip_buffer.getvalue(),
+    parquet_to_s3(
+        raw_data,
+        S3_ETHEREUM_FORECAST_BUCKET,
+        S3_ETHEREUM_CONSOLIDATED_RAW_PRICE_DATA_KEY,
+        aws_s3_client,
     )

@@ -1,10 +1,12 @@
 AWS_REGION = "us-east-1"
 SECRET_POLYGON_KEY = "ethereum-price-forecast"
 S3_ETHEREUM_FORECAST_BUCKET = "ethereum-price-forcecast"
-S3_ETHEREUM_CONSOLIDATED_RAW_PRICE_DATA_KEY = "data/ethereum_prices_all_time.csv.gz"
-S3_TRAIN_KEY = "modeling_data/train.csv"
-S3_VAL_KEY = "modeling_data/val.csv"
-S3_TEST_KEY = "modeling_data/test.csv"
+S3_ETHEREUM_CONSOLIDATED_RAW_PRICE_DATA_KEY = (
+    "raw_data/ethereum_prices_consolidated.parquet"
+)
+S3_TRAIN_KEY = "modeling_data/train.parquet"
+S3_VAL_KEY = "modeling_data/val.parquet"
+S3_TEST_KEY = "modeling_data/test.parquet"
 
 FEATURE_CONFIG = {
     "sma": {
