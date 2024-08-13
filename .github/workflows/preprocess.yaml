@@ -5,6 +5,7 @@ on:
     workflows: [get_data]
     types:
       - completed
+  workflow_dispatch:
 
 obs:
   run-script:
