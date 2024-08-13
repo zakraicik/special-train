@@ -2,9 +2,12 @@ import os
 import logging
 import pandas as pd
 from boto3 import Session
-from sklearn.preprocessing import MinMaxScaler
+import numpy as np
 
-from special_train.config import TARGET
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_squared_error
+
 from special_train.utils import validate_timestamps, load_raw_data, parquet_to_s3
 from special_train.config import (
     AWS_REGION,
@@ -15,6 +18,8 @@ from special_train.config import (
     S3_TEST_KEY,
     FEATURE_CONFIG,
     LAG_PERIODS,
+    TARGET,
+    TOP_N_FEATURES,
 )
 from special_train.data.technical_indicators import technical_indicator_functions
 
@@ -37,12 +42,14 @@ def generate_technical_indicators(df, config):
 def create_model_features(raw_data):
     logger.info("Creating technical indicators")
 
+    raw_features = [x for x in raw_data.columns]
+
     df = generate_technical_indicators(raw_data, FEATURE_CONFIG)
 
     logger.info(f"Added {df.shape[1] - raw_data.shape[1]} columns.")
     logger.info("Creating lagged columns")
 
-    features = [x for x in df.columns if x != TARGET]
+    features = [x for x in df.columns if x != TARGET and x not in raw_features]
 
     lagged_dfs = [
         df[features].shift(lag).add_suffix(f"_lag_{lag}") for lag in LAG_PERIODS
@@ -92,6 +99,43 @@ def scale_datasets(train_df, test_df, val_df, model_features):
     return train_df, test_df, val_df
 
 
+def feature_selection(train_df, test_df, model_features):
+
+    logger.info("Selecting features")
+
+    rf = RandomForestRegressor(
+        n_estimators=100,
+        max_depth=10,
+        min_samples_split=10,
+        min_samples_leaf=4,
+        max_features="sqrt",
+        random_state=42,
+        n_jobs=-2,
+    )
+
+    rf.fit(train_df[model_features], train_df[TARGET])
+
+    importances = rf.feature_importances_
+
+    top_indices = np.argsort(importances)[-TOP_N_FEATURES:][::-1]
+
+    top_features = np.array(model_features)[top_indices]
+
+    logger.info(f"Important Features: {top_features}")
+
+    train_rmse = np.sqrt(
+        mean_squared_error(train_df[TARGET], rf.predict(train_df[model_features]))
+    )
+    test_rmse = np.sqrt(
+        mean_squared_error(test_df[TARGET], rf.predict(test_df[model_features]))
+    )
+
+    logger.info(f"RMSE on Training Data: {train_rmse}")
+    logger.info(f"RMSE on Test Data: {test_rmse}")
+
+    return [x for x in top_features]
+
+
 if __name__ == "__main__":
     aws_access_key = os.environ.get("AWS_ACCESS_KEY")
     aws_secret_access_key = os.environ.get("AWS_SECRET_ACCESS_KEY")
@@ -124,13 +168,30 @@ if __name__ == "__main__":
         train_df, val_df, test_df, model_features
     )
 
-    # logger.info(
-    #     f"Writing train_df to s3://{S3_ETHEREUM_FORECAST_BUCKET}/{S3_TRAIN_KEY}"
-    # )
-    # parquet_to_s3(train_df, S3_ETHEREUM_FORECAST_BUCKET, S3_TRAIN_KEY, aws_s3_client)
+    top_features = feature_selection(train_df, test_df, model_features)
 
-    # logger.info(f"Writing val_df to s3://{S3_ETHEREUM_FORECAST_BUCKET}/{S3_VAL_KEY}")
-    # parquet_to_s3(val_df, S3_ETHEREUM_FORECAST_BUCKET, S3_VAL_KEY, aws_s3_client)
+    logger.info(
+        f"Writing train_df to s3://{S3_ETHEREUM_FORECAST_BUCKET}/{S3_TRAIN_KEY}"
+    )
+    parquet_to_s3(
+        train_df[top_features + [TARGET]],
+        S3_ETHEREUM_FORECAST_BUCKET,
+        S3_TRAIN_KEY,
+        aws_s3_client,
+    )
 
-    # logger.info(f"Writing test_df to s3://{S3_ETHEREUM_FORECAST_BUCKET}/{S3_TEST_KEY}")
-    # parquet_to_s3(test_df, S3_ETHEREUM_FORECAST_BUCKET, S3_TEST_KEY, aws_s3_client)
+    logger.info(f"Writing val_df to s3://{S3_ETHEREUM_FORECAST_BUCKET}/{S3_VAL_KEY}")
+    parquet_to_s3(
+        val_df[top_features + [TARGET]],
+        S3_ETHEREUM_FORECAST_BUCKET,
+        S3_VAL_KEY,
+        aws_s3_client,
+    )
+
+    logger.info(f"Writing test_df to s3://{S3_ETHEREUM_FORECAST_BUCKET}/{S3_TEST_KEY}")
+    parquet_to_s3(
+        test_df[top_features + [TARGET]],
+        S3_ETHEREUM_FORECAST_BUCKET,
+        S3_TEST_KEY,
+        aws_s3_client,
+    )
