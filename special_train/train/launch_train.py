@@ -1,17 +1,33 @@
 import os
 import sagemaker
 import boto3
+
 from sagemaker.tensorflow import TensorFlow
 from special_train.config import (
     S3_ETHEREUM_FORECAST_BUCKET,
+    SECRET_ID,
+    SECRET_SAGEMAKER_ARN_KEY,
     S3_TRAIN_KEY,
     S3_TEST_KEY,
     S3_VAL_KEY,
     AWS_REGION,
 )
 
+from special_train.utils import get_aws_secret
 
-def launch_training():
+aws_access_key = os.environ.get("AWS_ACCESS_KEY")
+aws_secret_access_key = os.environ.get("AWS_SECRET_ACCESS_KEY")
+
+session = boto3.Session(
+    aws_access_key_id=aws_access_key,
+    aws_secret_access_key=aws_secret_access_key,
+    region_name=AWS_REGION,
+)
+
+aws_secret_client = session.client(service_name="secretsmanager")
+
+
+def launch_training(role_arn):
     aws_access_key = os.environ.get("AWS_ACCESS_KEY")
     aws_secret_access_key = os.environ.get("AWS_SECRET_ACCESS_KEY")
 
@@ -23,7 +39,7 @@ def launch_training():
 
     sagemaker_session = sagemaker.Session(boto_session=session)
 
-    role = "sagemaker_role_arn"
+    role = role_arn
 
     estimator = TensorFlow(
         entry_point="train.py",
@@ -52,4 +68,7 @@ def launch_training():
 
 
 if __name__ == "__main__":
-    launch_training()
+
+    role_arn = get_aws_secret(aws_secret_client, SECRET_ID, SECRET_SAGEMAKER_ARN_KEY)
+
+    launch_training(role_arn)

@@ -1,18 +1,18 @@
 import os
-import json
 import boto3
 import pandas as pd
 from polygon import RESTClient
 from io import BytesIO
-from botocore.exceptions import ClientError
 from datetime import datetime, timedelta
 from special_train.utils import parquet_to_s3
 from special_train.config import (
     AWS_REGION,
-    SECRET_POLYGON_KEY,
+    SECRET_ID,
+    SECRET_POLYGON_API_KEY,
     S3_ETHEREUM_FORECAST_BUCKET,
     S3_ETHEREUM_CONSOLIDATED_RAW_PRICE_DATA_KEY,
 )
+from special_train.utils import get_aws_secret
 
 aws_access_key = os.environ.get("AWS_ACCESS_KEY")
 aws_secret_access_key = os.environ.get("AWS_SECRET_ACCESS_KEY")
@@ -25,21 +25,6 @@ session = boto3.Session(
 
 aws_secret_client = session.client(service_name="secretsmanager")
 aws_s3_client = session.client(service_name="s3")
-
-
-def get_aws_secret(SecretId):
-    try:
-        get_secret_value_response = aws_secret_client.get_secret_value(
-            SecretId=SecretId
-        )
-        secret = json.loads(get_secret_value_response["SecretString"])
-
-        polygon_api_key = secret["polygonApi"]
-
-        return polygon_api_key
-
-    except ClientError as e:
-        raise e
 
 
 def get_bucket_contents(bucket_name, prefix, aws_s3_client):
@@ -85,7 +70,9 @@ if __name__ == "__main__":
 
     end_date = datetime.today() - timedelta(days=1)
 
-    polygon_api_key = get_aws_secret(SECRET_POLYGON_KEY)
+    polygon_api_key = get_aws_secret(
+        aws_secret_client, SECRET_ID, SECRET_POLYGON_API_KEY
+    )
 
     polygon_client = create_polygon_client(polygon_api_key)
 
