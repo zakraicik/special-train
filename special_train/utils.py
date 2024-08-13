@@ -1,9 +1,11 @@
 import pandas as pd
-from datetime import datetime
+import json
 import logging
 import pandas as pd
 
+from datetime import datetime
 from io import BytesIO
+from botocore.exceptions import ClientError
 
 logging.basicConfig(level=logging.INFO, force=True)
 logger = logging.getLogger(__name__)
@@ -25,6 +27,21 @@ def convert_date_to_millisecond(date_time):
     millisecond_timestamp = int(timestamp_in_seconds * 1000)
 
     return millisecond_timestamp
+
+
+def get_aws_secret(aws_secret_client, SecretId, secretName):
+    try:
+        get_secret_value_response = aws_secret_client.get_secret_value(
+            SecretId=SecretId
+        )
+        secret = json.loads(get_secret_value_response["SecretString"])
+
+        secret = secret[secretName]
+
+        return secret
+
+    except ClientError as e:
+        raise e
 
 
 def parquet_to_s3(df, bucket, key, aws_s3_client):

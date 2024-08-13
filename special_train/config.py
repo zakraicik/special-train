@@ -1,5 +1,7 @@
 AWS_REGION = "us-east-1"
-SECRET_POLYGON_KEY = "ethereum-price-forecast"
+SECRET_ID = "ethereum-price-forecast"
+SECRET_POLYGON_API_KEY = "polygonApi"
+SECRET_SAGEMAKER_ARN_KEY = "sagemaker_arn"
 S3_ETHEREUM_FORECAST_BUCKET = "ethereum-price-forcecast"
 S3_ETHEREUM_CONSOLIDATED_RAW_PRICE_DATA_KEY = (
     "raw_data/ethereum_prices_consolidated.parquet"
