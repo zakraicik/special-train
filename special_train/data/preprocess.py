@@ -105,7 +105,7 @@ def feature_selection(train_df, test_df, model_features):
 
     rf = RandomForestRegressor(
         n_estimators=100,
-        max_depth=10,
+        max_depth=15,
         min_samples_split=10,
         min_samples_leaf=4,
         max_features="sqrt",
