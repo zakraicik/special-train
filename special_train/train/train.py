@@ -7,7 +7,7 @@ from tensorflow.keras.layers import LSTM, Dense, Dropout
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import EarlyStopping
 
-from special_train.config import TARGET
+TARGET = "next_period_close_change"
 
 
 def parse_args():
@@ -17,19 +17,27 @@ def parse_args():
     parser.add_argument("--learning-rate", type=float, default=0.001)
     parser.add_argument("--lstm-units", type=int, default=64)
     parser.add_argument("--sequence-length", type=int, default=24)
-    parser.add_argument("--model-dir", type=str, default=os.environ.get("SM_MODEL_DIR"))
+    parser.add_argument("--model_dir", type=str, default=os.environ.get("SM_MODEL_DIR"))
     parser.add_argument("--train", type=str, default=os.environ.get("SM_CHANNEL_TRAIN"))
     parser.add_argument("--valid", type=str, default=os.environ.get("SM_CHANNEL_VALID"))
     parser.add_argument("--test", type=str, default=os.environ.get("SM_CHANNEL_TEST"))
     return parser.parse_args()
 
 
-def create_sequences(data, sequence_length, target_column):
-    X, y = [], []
-    for i in range(len(data) - sequence_length):
-        X.append(data.iloc[i : (i + sequence_length)].values)
-        y.append(data.iloc[i + sequence_length][target_column])
-    return np.array(X), np.array(y)
+def create_sequences(data, sequence_length, feature_names, target_column):
+    num_sequences = len(data) - sequence_length
+    num_features = len(feature_names)
+
+    X = np.empty((num_sequences, sequence_length, num_features))
+    y = np.empty(num_sequences)
+
+    feature_data = data[feature_names].values
+
+    for i in range(num_sequences):
+        X[i] = feature_data[i : i + sequence_length]
+        y[i] = data.iloc[i + sequence_length][target_column]
+
+    return X, y
 
 
 def build_model(input_shape, lstm_units):
@@ -48,15 +56,21 @@ def build_model(input_shape, lstm_units):
 if __name__ == "__main__":
     args = parse_args()
 
-    train_df = pd.read_csv(os.path.join(args.train, "train.csv"))
-    valid_df = pd.read_csv(os.path.join(args.valid, "valid.csv"))
-    test_df = pd.read_csv(os.path.join(args.test, "test.csv"))
+    train_df = pd.read_parquet(os.path.join(args.train, "train.parquet"))
+    valid_df = pd.read_parquet(os.path.join(args.valid, "val.parquet"))
+    test_df = pd.read_parquet(os.path.join(args.test, "test.parquet"))
 
     feature_columns = [col for col in train_df.columns if col != TARGET]
 
-    X_train, y_train = create_sequences(train_df, args.sequence_length, TARGET)
-    X_valid, y_valid = create_sequences(valid_df, args.sequence_length, TARGET)
-    X_test, y_test = create_sequences(test_df, args.sequence_length, TARGET)
+    X_train, y_train = create_sequences(
+        train_df, args.sequence_length, feature_columns, TARGET
+    )
+    X_valid, y_valid = create_sequences(
+        valid_df, args.sequence_length, feature_columns, TARGET
+    )
+    X_test, y_test = create_sequences(
+        test_df, args.sequence_length, feature_columns, TARGET
+    )
 
     model = build_model((args.sequence_length, len(feature_columns)), args.lstm_units)
     model.compile(
