@@ -30,7 +30,7 @@ def launch_training(session, role_arn):
         output_path=f"s3://{S3_ETHEREUM_FORECAST_BUCKET}/models",
         py_version="py38",
         hyperparameters={
-            "epochs": 100,
+            "epochs": 1,
             "batch-size": 128,
             "learning-rate": 0.001,
             "lstm-units": 64,

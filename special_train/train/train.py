@@ -2,6 +2,9 @@ import argparse
 import os
 import pandas as pd
 import numpy as np
+
+import tensorflow_io
+
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense, Dropout
 from tensorflow.keras.optimizers import Adam
@@ -88,6 +91,8 @@ if __name__ == "__main__":
     )
 
     test_loss, test_mae = model.evaluate(X_test, y_test)
+
+    print(f"Test loss: {test_loss}")
     print(f"Test MAE: {test_mae}")
 
-    model.save(os.path.join(args.model_dir, "1"))
+    model.save(args.model_dir)
