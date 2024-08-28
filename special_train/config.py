@@ -10,6 +10,8 @@ S3_TRAIN_KEY = "modeling_data/train.parquet"
 S3_VAL_KEY = "modeling_data/val.parquet"
 S3_TEST_KEY = "modeling_data/test.parquet"
 
+RAW_FEATURES = ["open", "high", "low", "close", "volume", "transactions"]
+
 FEATURE_CONFIG = {
     "sma": {
         "columns": {

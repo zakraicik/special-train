@@ -68,11 +68,6 @@ def load_raw_data(aws_s3_client, bucket, key):
     training_data = pd.read_parquet(parquet_buffer)
 
     logger.info(f"Dataset Size: {training_data.shape}")
-    logger.info("Creating target...")
-
-    training_data["next_period_close_change"] = (
-        training_data["close"].pct_change().shift(-1)
-    )
 
     logger.info("Reindexing... ")
 
