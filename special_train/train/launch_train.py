@@ -6,9 +6,12 @@ from special_train.config import (
     S3_ETHEREUM_FORECAST_BUCKET,
     SECRET_ID,
     SECRET_SAGEMAKER_ARN_KEY,
-    S3_TRAIN_KEY,
-    S3_TEST_KEY,
-    S3_VAL_KEY,
+    S3_X_TRAIN_KEY,
+    S3_Y_TRAIN_KEY,
+    S3_X_VAL_KEY,
+    S3_Y_VAL_KEY,
+    S3_X_TEST_KEY,
+    S3_Y_TEST_KEY,
     AWS_REGION,
 )
 from special_train.utils import get_aws_secret
@@ -30,11 +33,10 @@ def launch_training(session, role_arn):
         output_path=f"s3://{S3_ETHEREUM_FORECAST_BUCKET}/models",
         py_version="py38",
         hyperparameters={
-            "epochs": 1,
-            "batch-size": 128,
+            "epochs": 10,
             "learning-rate": 0.001,
-            "lstm-units": 64,
-            "sequence-length": 24,
+            "lstm-units": 128,
+            "batch-size": 32,
         },
         sagemaker_session=sagemaker_session,
     )
@@ -42,9 +44,10 @@ def launch_training(session, role_arn):
     try:
         estimator.fit(
             {
-                "train": f"s3://{S3_ETHEREUM_FORECAST_BUCKET}/{S3_TRAIN_KEY}",
-                "valid": f"s3://{S3_ETHEREUM_FORECAST_BUCKET}/{S3_VAL_KEY}",
-                "test": f"s3://{S3_ETHEREUM_FORECAST_BUCKET}/{S3_TEST_KEY}",
+                "train_x": f"s3://{S3_ETHEREUM_FORECAST_BUCKET}/{S3_X_TRAIN_KEY}",
+                "train_y": f"s3://{S3_ETHEREUM_FORECAST_BUCKET}/{S3_Y_TRAIN_KEY}",
+                "valid_x": f"s3://{S3_ETHEREUM_FORECAST_BUCKET}/{S3_X_VAL_KEY}",
+                "valid_y": f"s3://{S3_ETHEREUM_FORECAST_BUCKET}/{S3_Y_VAL_KEY}",
             }
         )
     except Exception as e:
