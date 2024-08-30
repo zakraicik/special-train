@@ -2,6 +2,7 @@ import pandas as pd
 import json
 import logging
 import pandas as pd
+import numpy as np
 
 from datetime import datetime
 from io import BytesIO
@@ -44,6 +45,20 @@ def get_aws_secret(aws_secret_client, SecretId, secretName):
         raise e
 
 
+def save_numpy_to_s3(aws_s3_client, np_array, s3_bucket, s3_key):
+    """
+    Save a numpy array to S3 as a .npy file.
+    """
+
+    buffer = BytesIO()
+
+    np.save(buffer, np_array)
+    buffer.seek(0)
+
+    aws_s3_client.upload_fileobj(buffer, s3_bucket, s3_key)
+    logger.info(f"Uploaded {s3_key} to S3 bucket {s3_bucket}")
+
+
 def parquet_to_s3(df, bucket, key, aws_s3_client):
     out_buffer = BytesIO()
     df.to_parquet(out_buffer, index=True)
@@ -65,18 +80,18 @@ def load_raw_data(aws_s3_client, bucket, key):
     response = aws_s3_client.get_object(Bucket=bucket, Key=key)
     parquet_buffer = BytesIO(response["Body"].read())
 
-    training_data = pd.read_parquet(parquet_buffer)
+    df = pd.read_parquet(parquet_buffer)
 
-    logger.info(f"Dataset Size: {training_data.shape}")
+    logger.info(f"Dataset Size: {df.shape}")
 
     logger.info("Reindexing... ")
 
-    training_data.drop(columns=["otc"], inplace=True)
-    training_data.dropna(inplace=True)
+    df.drop(columns=["otc"], inplace=True)
+    df.dropna(inplace=True)
 
-    training_data.set_index("timestamp", inplace=True)
+    df.set_index("timestamp", inplace=True)
 
-    return training_data
+    return df
 
 
 def validate_timestamps(df):
