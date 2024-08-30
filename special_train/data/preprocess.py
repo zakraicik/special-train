@@ -1,70 +1,27 @@
 import os
 import logging
-import pandas as pd
 from boto3 import Session
 import numpy as np
 
 from sklearn.preprocessing import MinMaxScaler
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.metrics import mean_squared_error
 
-from special_train.utils import validate_timestamps, load_raw_data, parquet_to_s3
+from special_train.utils import validate_timestamps, load_raw_data, save_numpy_to_s3
 from special_train.config import (
     AWS_REGION,
     S3_ETHEREUM_FORECAST_BUCKET,
     S3_ETHEREUM_CONSOLIDATED_RAW_PRICE_DATA_KEY,
-    S3_TRAIN_KEY,
-    S3_VAL_KEY,
-    S3_TEST_KEY,
-    FEATURE_CONFIG,
-    LAG_PERIODS,
-    TARGET,
-    TOP_N_FEATURES,
+    S3_X_TRAIN_KEY,
+    S3_Y_TRAIN_KEY,
+    S3_X_VAL_KEY,
+    S3_Y_VAL_KEY,
+    S3_X_TEST_KEY,
+    S3_Y_TEST_KEY,
+    WINDOW_LENGTH,
+    FEATURES,
 )
-from special_train.data.technical_indicators import technical_indicator_functions
 
 logging.basicConfig(level=logging.INFO, force=True)
 logger = logging.getLogger(__name__)
-
-
-def generate_technical_indicators(df, config):
-    new_features = {}
-    for feature, settings in config.items():
-        if feature in technical_indicator_functions:
-            new_features = technical_indicator_functions[feature](
-                df, settings, new_features
-            )
-    new_features_df = pd.DataFrame(new_features)
-    df = pd.concat([df, new_features_df], axis=1)
-    return df
-
-
-def create_model_features(raw_data):
-    logger.info("Creating technical indicators")
-
-    raw_features = [x for x in raw_data.columns]
-
-    df = generate_technical_indicators(raw_data, FEATURE_CONFIG)
-
-    logger.info(f"Added {df.shape[1] - raw_data.shape[1]} columns.")
-    logger.info("Creating lagged columns")
-
-    features = [x for x in df.columns if x != TARGET and x not in raw_features]
-
-    lagged_dfs = [
-        df[features].shift(lag).add_suffix(f"_lag_{lag}") for lag in LAG_PERIODS
-    ]
-
-    df = pd.concat([df] + lagged_dfs, axis=1)
-
-    logger.info(f"Added {df.shape[1] - len(features)} lagged columns.")
-    logger.info("Differencing engineered features")
-
-    model_features = features + [col for col in df.columns if "lag" in col]
-
-    df[model_features] = df[model_features].diff()
-
-    return df, model_features
 
 
 def split_data(df, train_size):
@@ -85,55 +42,51 @@ def split_data(df, train_size):
     return train_df, val_df, test_df
 
 
-def scale_datasets(train_df, test_df, val_df, model_features):
+def normalize_data(df, features, target_column):
 
-    logger.info("Scaling datasets...")
+    price_column = "close"
+
+    df[price_column] = df[price_column] / df[price_column].iloc[0] - 1
+
+    df = df[features + [target_column]]
+
+    train_df, val_df, test_df = split_data(df, 0.8)
+
+    train_df = train_df.copy()
+    val_df = val_df.copy()
+    test_df = test_df.copy()
 
     scaler = MinMaxScaler()
 
-    train_df.loc[:, model_features] = scaler.fit_transform(train_df[model_features])
+    train_df[features] = scaler.fit_transform(train_df[features])
 
-    test_df.loc[:, model_features] = scaler.transform(test_df[model_features])
-    val_df.loc[:, model_features] = scaler.transform(val_df[model_features])
+    val_df[features] = scaler.transform(val_df[features])
+    test_df[features] = scaler.transform(test_df[features])
 
-    return train_df, test_df, val_df
+    return train_df, val_df, test_df
 
 
-def feature_selection(train_df, test_df, model_features):
+def create_sliding_windows(df, feature_columns, target_column, win_len=10):
 
-    logger.info("Selecting features")
+    features = df[feature_columns].values
+    targets = df[target_column].values
 
-    rf = RandomForestRegressor(
-        n_estimators=100,
-        max_depth=15,
-        min_samples_split=10,
-        min_samples_leaf=4,
-        max_features="sqrt",
-        random_state=42,
-        n_jobs=-2,
-    )
+    X, y = [], []
 
-    rf.fit(train_df[model_features], train_df[TARGET])
+    for i in range(len(df) - win_len):
 
-    importances = rf.feature_importances_
+        X_window = features[i : i + win_len]
+        y_value = targets[i + win_len]
 
-    top_indices = np.argsort(importances)[-TOP_N_FEATURES:][::-1]
+        X.append(X_window)
+        y.append(y_value)
 
-    top_features = np.array(model_features)[top_indices]
+    X = np.array(X)
+    y = np.array(y)
 
-    logger.info(f"Important Features: {top_features}")
+    y = y.reshape(-1)
 
-    train_rmse = np.sqrt(
-        mean_squared_error(train_df[TARGET], rf.predict(train_df[model_features]))
-    )
-    test_rmse = np.sqrt(
-        mean_squared_error(test_df[TARGET], rf.predict(test_df[model_features]))
-    )
-
-    logger.info(f"RMSE on Training Data: {train_rmse}")
-    logger.info(f"RMSE on Test Data: {test_rmse}")
-
-    return [x for x in top_features]
+    return X, y
 
 
 if __name__ == "__main__":
@@ -154,44 +107,56 @@ if __name__ == "__main__":
         S3_ETHEREUM_CONSOLIDATED_RAW_PRICE_DATA_KEY,
     )
 
-    df, model_features = create_model_features(df)
+    df = df.astype(float)
 
     df = validate_timestamps(df)
 
+    logger.info(f"Creating Target")
+
+    df["target"] = df["close"]
+
     df.dropna(inplace=True)
 
-    logger.info(f"Engineered Dataset Size: {df.shape}")
+    logger.info(f"Splitting and Scaling Datasets")
 
-    train_df, val_df, test_df = split_data(df, 0.8)
+    train_df, val_df, test_df = normalize_data(df, FEATURES, "target")
 
-    train_df, val_df, test_df = scale_datasets(
-        train_df, val_df, test_df, model_features
+    X_train, y_train = create_sliding_windows(
+        train_df, FEATURES, "target", WINDOW_LENGTH
     )
 
-    top_features = feature_selection(train_df, test_df, model_features)
+    X_val, y_val = create_sliding_windows(val_df, FEATURES, "target", WINDOW_LENGTH)
+
+    X_test, y_test = create_sliding_windows(test_df, FEATURES, "target", WINDOW_LENGTH)
 
     logger.info(
-        f"Writing train_df to s3://{S3_ETHEREUM_FORECAST_BUCKET}/{S3_TRAIN_KEY}"
-    )
-    parquet_to_s3(
-        train_df[top_features + [TARGET]],
-        S3_ETHEREUM_FORECAST_BUCKET,
-        S3_TRAIN_KEY,
-        aws_s3_client,
+        f"Writing X_train to s3://{S3_ETHEREUM_FORECAST_BUCKET}/{S3_X_TRAIN_KEY}"
     )
 
-    logger.info(f"Writing val_df to s3://{S3_ETHEREUM_FORECAST_BUCKET}/{S3_VAL_KEY}")
-    parquet_to_s3(
-        val_df[top_features + [TARGET]],
-        S3_ETHEREUM_FORECAST_BUCKET,
-        S3_VAL_KEY,
-        aws_s3_client,
+    save_numpy_to_s3(
+        aws_s3_client, X_train, S3_ETHEREUM_FORECAST_BUCKET, S3_X_TRAIN_KEY
     )
 
-    logger.info(f"Writing test_df to s3://{S3_ETHEREUM_FORECAST_BUCKET}/{S3_TEST_KEY}")
-    parquet_to_s3(
-        test_df[top_features + [TARGET]],
-        S3_ETHEREUM_FORECAST_BUCKET,
-        S3_TEST_KEY,
-        aws_s3_client,
+    logger.info(
+        f"Writing y_train to s3://{S3_ETHEREUM_FORECAST_BUCKET}/{S3_Y_TRAIN_KEY}"
     )
+
+    save_numpy_to_s3(
+        aws_s3_client, y_train, S3_ETHEREUM_FORECAST_BUCKET, S3_Y_TRAIN_KEY
+    )
+
+    logger.info(f"Writing X_val to s3://{S3_ETHEREUM_FORECAST_BUCKET}/{S3_X_VAL_KEY}")
+
+    save_numpy_to_s3(aws_s3_client, X_val, S3_ETHEREUM_FORECAST_BUCKET, S3_X_VAL_KEY)
+
+    logger.info(f"Writing y_val to s3://{S3_ETHEREUM_FORECAST_BUCKET}/{S3_Y_VAL_KEY}")
+
+    save_numpy_to_s3(aws_s3_client, y_val, S3_ETHEREUM_FORECAST_BUCKET, S3_Y_VAL_KEY)
+
+    logger.info(f"Writing X_test to s3://{S3_ETHEREUM_FORECAST_BUCKET}/{S3_X_TEST_KEY}")
+
+    save_numpy_to_s3(aws_s3_client, X_test, S3_ETHEREUM_FORECAST_BUCKET, S3_X_TEST_KEY)
+
+    logger.info(f"Writing y_test to s3://{S3_ETHEREUM_FORECAST_BUCKET}/{S3_Y_TEST_KEY}")
+
+    save_numpy_to_s3(aws_s3_client, y_test, S3_ETHEREUM_FORECAST_BUCKET, S3_Y_TEST_KEY)
