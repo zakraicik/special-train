@@ -17,6 +17,7 @@ from special_train.config import (
     S3_X_TEST_KEY,
     S3_Y_TEST_KEY,
     WINDOW_LENGTH,
+    FEATURES,
 )
 
 logging.basicConfig(level=logging.INFO, force=True)
@@ -41,11 +42,13 @@ def split_data(df, train_size):
     return train_df, val_df, test_df
 
 
-def normalize_data(df, price_column, target_column):
+def normalize_data(df, features, target_column):
+
+    price_column = "close"
 
     df[price_column] = df[price_column] / df[price_column].iloc[0] - 1
 
-    df = df[[price_column, target_column]]
+    df = df[features + [target_column]]
 
     train_df, val_df, test_df = split_data(df, 0.8)
 
@@ -55,21 +58,23 @@ def normalize_data(df, price_column, target_column):
 
     scaler = MinMaxScaler()
 
-    train_df[price_column] = scaler.fit_transform(train_df[[price_column]])
+    train_df[features] = scaler.fit_transform(train_df[features])
 
-    val_df[price_column] = scaler.transform(val_df[[price_column]])
-    test_df[price_column] = scaler.transform(test_df[[price_column]])
+    val_df[features] = scaler.transform(val_df[features])
+    test_df[features] = scaler.transform(test_df[features])
 
     return train_df, val_df, test_df
 
 
-def create_sliding_windows(df, feature_column, target_column, win_len=5):
-    features = df[feature_column].values
+def create_sliding_windows(df, feature_columns, target_column, win_len=10):
+
+    features = df[feature_columns].values
     targets = df[target_column].values
 
     X, y = [], []
 
     for i in range(len(df) - win_len):
+
         X_window = features[i : i + win_len]
         y_value = targets[i + win_len]
 
@@ -78,8 +83,6 @@ def create_sliding_windows(df, feature_column, target_column, win_len=5):
 
     X = np.array(X)
     y = np.array(y)
-
-    X = X.reshape(-1, win_len, 1)  # (total_samples, timesteps, features)
 
     y = y.reshape(-1)
 
@@ -116,15 +119,15 @@ if __name__ == "__main__":
 
     logger.info(f"Splitting and Scaling Datasets")
 
-    train_df, val_df, test_df = normalize_data(df, "close", "target")
+    train_df, val_df, test_df = normalize_data(df, FEATURES, "target")
 
     X_train, y_train = create_sliding_windows(
-        train_df, "close", "target", WINDOW_LENGTH
+        train_df, FEATURES, "target", WINDOW_LENGTH
     )
 
-    X_val, y_val = create_sliding_windows(val_df, "close", "target", WINDOW_LENGTH)
+    X_val, y_val = create_sliding_windows(val_df, FEATURES, "target", WINDOW_LENGTH)
 
-    X_test, y_test = create_sliding_windows(test_df, "close", "target", WINDOW_LENGTH)
+    X_test, y_test = create_sliding_windows(test_df, FEATURES, "target", WINDOW_LENGTH)
 
     logger.info(
         f"Writing X_train to s3://{S3_ETHEREUM_FORECAST_BUCKET}/{S3_X_TRAIN_KEY}"

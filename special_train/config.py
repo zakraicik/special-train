@@ -13,4 +13,6 @@ S3_Y_VAL_KEY = "modeling_data/y_val.npy"
 S3_X_TEST_KEY = "modeling_data/X_test.npy"
 S3_Y_TEST_KEY = "modeling_data/y_test.npy"
 
-WINDOW_LENGTH = 5
+WINDOW_LENGTH = 10
+
+FEATURES = ["close", "volume", "transactions"]
