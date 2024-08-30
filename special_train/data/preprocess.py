@@ -1,19 +1,22 @@
 import os
 import logging
 from boto3 import Session
-import pandas as pd
+import numpy as np
 
 from sklearn.preprocessing import MinMaxScaler
 
-from special_train.utils import validate_timestamps, load_raw_data, parquet_to_s3
+from special_train.utils import validate_timestamps, load_raw_data, save_numpy_to_s3
 from special_train.config import (
     AWS_REGION,
     S3_ETHEREUM_FORECAST_BUCKET,
     S3_ETHEREUM_CONSOLIDATED_RAW_PRICE_DATA_KEY,
-    S3_TRAIN_KEY,
-    S3_VAL_KEY,
-    S3_TEST_KEY,
-    RAW_FEATURES,
+    S3_X_TRAIN_KEY,
+    S3_Y_TRAIN_KEY,
+    S3_X_VAL_KEY,
+    S3_Y_VAL_KEY,
+    S3_X_TEST_KEY,
+    S3_Y_TEST_KEY,
+    WINDOW_LENGTH,
 )
 
 logging.basicConfig(level=logging.INFO, force=True)
@@ -38,15 +41,49 @@ def split_data(df, train_size):
     return train_df, val_df, test_df
 
 
-def scale_datasets(train_df, test_df, val_df, model_features):
+def normalize_data(df, price_column, target_column):
+
+    df[price_column] = df[price_column] / df[price_column].iloc[0] - 1
+
+    df = df[[price_column, target_column]]
+
+    train_df, val_df, test_df = split_data(df, 0.8)
+
+    train_df = train_df.copy()
+    val_df = val_df.copy()
+    test_df = test_df.copy()
 
     scaler = MinMaxScaler()
 
-    train_df.loc[:, model_features] = scaler.fit_transform(train_df[model_features])
-    test_df.loc[:, model_features] = scaler.transform(test_df[model_features])
-    val_df.loc[:, model_features] = scaler.transform(val_df[model_features])
+    train_df[price_column] = scaler.fit_transform(train_df[[price_column]])
 
-    return train_df, test_df, val_df
+    val_df[price_column] = scaler.transform(val_df[[price_column]])
+    test_df[price_column] = scaler.transform(test_df[[price_column]])
+
+    return train_df, val_df, test_df
+
+
+def create_sliding_windows(df, feature_column, target_column, win_len=5):
+    features = df[feature_column].values
+    targets = df[target_column].values
+
+    X, y = [], []
+
+    for i in range(len(df) - win_len):
+        X_window = features[i : i + win_len]
+        y_value = targets[i + win_len]
+
+        X.append(X_window)
+        y.append(y_value)
+
+    X = np.array(X)
+    y = np.array(y)
+
+    X = X.reshape(-1, win_len, 1)  # (total_samples, timesteps, features)
+
+    y = y.reshape(-1)
+
+    return X, y
 
 
 if __name__ == "__main__":
@@ -73,41 +110,50 @@ if __name__ == "__main__":
 
     logger.info(f"Creating Target")
 
-    df["next_period_close_change"] = df["close"].pct_change().shift(-1)
+    df["target"] = df["close"]
 
     df.dropna(inplace=True)
 
-    logger.info(f"Splitting Datasets")
+    logger.info(f"Splitting and Scaling Datasets")
 
-    train_df, val_df, test_df = split_data(df, 0.8)
+    train_df, val_df, test_df = normalize_data(df, "close", "target")
 
-    logger.info(f"Scaling Datasets")
+    X_train, y_train = create_sliding_windows(
+        train_df, "close", "target", WINDOW_LENGTH
+    )
 
-    train_df, val_df, test_df = scale_datasets(train_df, val_df, test_df, RAW_FEATURES)
+    X_val, y_val = create_sliding_windows(val_df, "close", "target", WINDOW_LENGTH)
+
+    X_test, y_test = create_sliding_windows(test_df, "close", "target", WINDOW_LENGTH)
 
     logger.info(
-        f"Writing train_df to s3://{S3_ETHEREUM_FORECAST_BUCKET}/{S3_TRAIN_KEY}"
+        f"Writing X_train to s3://{S3_ETHEREUM_FORECAST_BUCKET}/{S3_X_TRAIN_KEY}"
     )
 
-    parquet_to_s3(
-        train_df,
-        S3_ETHEREUM_FORECAST_BUCKET,
-        S3_TRAIN_KEY,
-        aws_s3_client,
+    save_numpy_to_s3(
+        aws_s3_client, X_train, S3_ETHEREUM_FORECAST_BUCKET, S3_X_TRAIN_KEY
     )
 
-    logger.info(f"Writing val_df to s3://{S3_ETHEREUM_FORECAST_BUCKET}/{S3_VAL_KEY}")
-    parquet_to_s3(
-        val_df,
-        S3_ETHEREUM_FORECAST_BUCKET,
-        S3_VAL_KEY,
-        aws_s3_client,
+    logger.info(
+        f"Writing y_train to s3://{S3_ETHEREUM_FORECAST_BUCKET}/{S3_Y_TRAIN_KEY}"
     )
 
-    logger.info(f"Writing test_df to s3://{S3_ETHEREUM_FORECAST_BUCKET}/{S3_TEST_KEY}")
-    parquet_to_s3(
-        test_df,
-        S3_ETHEREUM_FORECAST_BUCKET,
-        S3_TEST_KEY,
-        aws_s3_client,
+    save_numpy_to_s3(
+        aws_s3_client, y_train, S3_ETHEREUM_FORECAST_BUCKET, S3_Y_TRAIN_KEY
     )
+
+    logger.info(f"Writing X_val to s3://{S3_ETHEREUM_FORECAST_BUCKET}/{S3_X_VAL_KEY}")
+
+    save_numpy_to_s3(aws_s3_client, X_val, S3_ETHEREUM_FORECAST_BUCKET, S3_X_VAL_KEY)
+
+    logger.info(f"Writing y_val to s3://{S3_ETHEREUM_FORECAST_BUCKET}/{S3_Y_VAL_KEY}")
+
+    save_numpy_to_s3(aws_s3_client, y_val, S3_ETHEREUM_FORECAST_BUCKET, S3_Y_VAL_KEY)
+
+    logger.info(f"Writing X_test to s3://{S3_ETHEREUM_FORECAST_BUCKET}/{S3_X_TEST_KEY}")
+
+    save_numpy_to_s3(aws_s3_client, X_test, S3_ETHEREUM_FORECAST_BUCKET, S3_X_TEST_KEY)
+
+    logger.info(f"Writing y_test to s3://{S3_ETHEREUM_FORECAST_BUCKET}/{S3_Y_TEST_KEY}")
+
+    save_numpy_to_s3(aws_s3_client, y_test, S3_ETHEREUM_FORECAST_BUCKET, S3_Y_TEST_KEY)
