@@ -1,8 +1,9 @@
 import os
 import logging
-from boto3 import Session
+import talib
 import numpy as np
 
+from boto3 import Session
 from sklearn.preprocessing import MinMaxScaler
 
 from special_train.utils import validate_timestamps, load_raw_data, save_numpy_to_s3
@@ -42,13 +43,25 @@ def split_data(df, train_size):
     return train_df, val_df, test_df
 
 
+def add_technical_features(df):
+
+    df.loc[:, "SMA_10"] = talib.SMA(df["close"], timeperiod=10)
+    df.loc[:, "SMA_30"] = talib.SMA(df["close"], timeperiod=30)
+
+    return df
+
+
 def normalize_data(df, features, target_column):
+
+    sma_columns = ["SMA_10", "SMA_30"]
 
     price_column = "close"
 
     df[price_column] = df[price_column] / df[price_column].iloc[0] - 1
+    df["SMA_10"] = df["SMA_10"] / df["SMA_10"].iloc[0] - 1
+    df["SMA_30"] = df["SMA_30"] / df["SMA_30"].iloc[0] - 1
 
-    df = df[features + [target_column]]
+    df = df[features + sma_columns + [target_column]]
 
     train_df, val_df, test_df = split_data(df, 0.8)
 
@@ -58,10 +71,12 @@ def normalize_data(df, features, target_column):
 
     scaler = MinMaxScaler()
 
-    train_df[features] = scaler.fit_transform(train_df[features])
+    train_df[features + sma_columns] = scaler.fit_transform(
+        train_df[features + sma_columns]
+    )
 
-    val_df[features] = scaler.transform(val_df[features])
-    test_df[features] = scaler.transform(test_df[features])
+    val_df[features + sma_columns] = scaler.transform(val_df[features + sma_columns])
+    test_df[features + sma_columns] = scaler.transform(test_df[features + sma_columns])
 
     return train_df, val_df, test_df
 
@@ -115,6 +130,10 @@ if __name__ == "__main__":
 
     df["target"] = df["close"]
 
+    logger.info(f"Creating Technical Features")
+
+    df = add_technical_features(df)
+
     df.dropna(inplace=True)
 
     logger.info(f"Splitting and Scaling Datasets")
@@ -122,12 +141,16 @@ if __name__ == "__main__":
     train_df, val_df, test_df = normalize_data(df, FEATURES, "target")
 
     X_train, y_train = create_sliding_windows(
-        train_df, FEATURES, "target", WINDOW_LENGTH
+        train_df, FEATURES + ["SMA_10", "SMA_30"], "target", WINDOW_LENGTH
     )
 
-    X_val, y_val = create_sliding_windows(val_df, FEATURES, "target", WINDOW_LENGTH)
+    X_val, y_val = create_sliding_windows(
+        val_df, FEATURES + ["SMA_10", "SMA_30"], "target", WINDOW_LENGTH
+    )
 
-    X_test, y_test = create_sliding_windows(test_df, FEATURES, "target", WINDOW_LENGTH)
+    X_test, y_test = create_sliding_windows(
+        test_df, FEATURES + ["SMA_10", "SMA_30"], "target", WINDOW_LENGTH
+    )
 
     logger.info(
         f"Writing X_train to s3://{S3_ETHEREUM_FORECAST_BUCKET}/{S3_X_TRAIN_KEY}"

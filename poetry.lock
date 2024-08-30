@@ -2676,6 +2676,19 @@ develop = ["colorama", "cython (>=0.29.33)", "cython (>=3.0.10,<4)", "flake8", "
 docs = ["ipykernel", "jupyter-client", "matplotlib", "nbconvert", "nbformat", "numpydoc", "pandas-datareader", "sphinx"]
 
 [[package]]
+name = "ta-lib"
+version = "0.4.32"
+description = "Python wrapper for TA-Lib"
+optional = false
+python-versions = "*"
+files = [
+    {file = "TA-Lib-0.4.32.tar.gz", hash = "sha256:fb74c323217bead847a045c97aa17bfd147aef17e20a75857ea0f8f7ee7cdaa0"},
+]
+
+[package.dependencies]
+numpy = "*"
+
+[[package]]
 name = "tblib"
 version = "3.0.0"
 description = "Traceback serialization library."
@@ -3177,4 +3190,4 @@ test = ["big-O", "importlib-resources", "jaraco.functools", "jaraco.itertools", 
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.12,<3.13"
-content-hash = "9c72d31ce5fe339053762d77131e977fcaae0fbd68834f24ea01ed1abfe29d0e"
+content-hash = "47d44834d6f0b3d548dfe633259553f69f8cc4b252e3ca36b1b40f460e96e5e5"
