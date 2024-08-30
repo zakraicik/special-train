@@ -2,10 +2,12 @@ import argparse
 import os
 import numpy as np
 
+import tensorflow_io
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense, Dropout
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import EarlyStopping
+
 
 DROPOUT_RATE = 0.2
 

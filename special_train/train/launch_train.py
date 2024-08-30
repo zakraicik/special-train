@@ -34,9 +34,9 @@ def launch_training(session, role_arn):
         py_version="py38",
         hyperparameters={
             "epochs": 10,
-            "learning-rate": 0.001,
+            "learning-rate": 0.01,
             "lstm-units": 128,
-            "batch-size": 32,
+            "batch-size": 128,
         },
         sagemaker_session=sagemaker_session,
     )
