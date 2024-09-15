@@ -24,6 +24,8 @@ pyarrow = "^17.0.0"
 tensorflow-io = "^0.37.1"
 ta-lib = "^0.4.32"
 
+[tool.poetry.extras]
+local = ["keras-tuner"]
 
 [build-system]
 requires = ["poetry-core"]
