@@ -4,8 +4,8 @@ __pycache__/
 *$py.class
 *.ipynb
 *.csv
-special_train/data/tuning_logs/
-special_train/.DS_Store
+tuning_logs/
+.DS_Store
 
 # C extensions
 *.so
