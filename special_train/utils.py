@@ -3,6 +3,7 @@ import json
 import logging
 import pandas as pd
 import numpy as np
+import pickle
 
 from datetime import datetime
 from io import BytesIO
@@ -71,6 +72,11 @@ def parquet_to_s3(df, bucket, key, aws_s3_client):
         Key=key,
         ExtraArgs={"ContentType": "binary/octet-stream"},
     )
+
+
+def save_object_to_s3(s3_client, obj, bucket, key):
+    serialized_obj = pickle.dumps(obj)
+    s3_client.put_object(Bucket=bucket, Key=key, Body=serialized_obj)
 
 
 def load_raw_data(aws_s3_client, bucket, key):

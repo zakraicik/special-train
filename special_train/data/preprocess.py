@@ -11,6 +11,7 @@ from special_train.utils import (
     load_raw_data,
     save_numpy_to_s3,
     convert_millisecond_to_date,
+    save_object_to_s3,
 )
 from special_train.config import (
     AWS_REGION,
@@ -22,6 +23,8 @@ from special_train.config import (
     S3_Y_VAL_KEY,
     S3_X_TEST_KEY,
     S3_Y_TEST_KEY,
+    S3_FEATURE_SCLAER,
+    S3_TARGET_SCALER,
     N,
     FEATURES,
 )
@@ -121,6 +124,16 @@ if __name__ == "__main__":
 
     train_df, val_df, test_df, feature_scaler, target_scaler = normalize_data(
         df, FEATURES, "target"
+    )
+
+    logger.info(f"Saving feature scaler to S3://{S3_FEATURE_SCLAER}")
+    save_object_to_s3(
+        aws_s3_client, feature_scaler, S3_ETHEREUM_FORECAST_BUCKET, S3_FEATURE_SCLAER
+    )
+
+    logger.info(f"Saving target scaler to S3://{S3_TARGET_SCALER}")
+    save_object_to_s3(
+        aws_s3_client, target_scaler, S3_ETHEREUM_FORECAST_BUCKET, S3_TARGET_SCALER
     )
 
     X_train, y_train = create_multistep_dataset(train_df, 12, FEATURES, "target", N)
