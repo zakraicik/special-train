@@ -12,7 +12,14 @@ S3_X_VAL_KEY = "modeling_data/X_val.npy"
 S3_Y_VAL_KEY = "modeling_data/y_val.npy"
 S3_X_TEST_KEY = "modeling_data/X_test.npy"
 S3_Y_TEST_KEY = "modeling_data/y_test.npy"
+S3_FEATURE_SCLAER = "modeling_utils/feature_scaler.pkl"
+S3_TARGET_SCALER = "modeling_utils/target_scaler.pkl"
 
-WINDOW_LENGTH = 10
+N = 12
 
-FEATURES = ["close", "volume", "transactions"]
+FEATURES = [
+    "close",
+    "volume",
+    "transactions",
+    "vwap",
+]

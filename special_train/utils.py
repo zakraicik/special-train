@@ -3,10 +3,13 @@ import json
 import logging
 import pandas as pd
 import numpy as np
+import pickle
+import io
 
 from datetime import datetime
 from io import BytesIO
 from botocore.exceptions import ClientError
+from tensorflow.keras.models import load_model
 
 logging.basicConfig(level=logging.INFO, force=True)
 logger = logging.getLogger(__name__)
@@ -59,6 +62,14 @@ def save_numpy_to_s3(aws_s3_client, np_array, s3_bucket, s3_key):
     logger.info(f"Uploaded {s3_key} to S3 bucket {s3_bucket}")
 
 
+def load_numpy_from_s3(s3_client, bucket, key):
+    response = s3_client.get_object(Bucket=bucket, Key=key)
+
+    file_stream = io.BytesIO(response["Body"].read())
+    array = np.load(file_stream)
+    return array
+
+
 def parquet_to_s3(df, bucket, key, aws_s3_client):
     out_buffer = BytesIO()
     df.to_parquet(out_buffer, index=True)
@@ -71,6 +82,11 @@ def parquet_to_s3(df, bucket, key, aws_s3_client):
         Key=key,
         ExtraArgs={"ContentType": "binary/octet-stream"},
     )
+
+
+def save_object_to_s3(s3_client, obj, bucket, key):
+    serialized_obj = pickle.dumps(obj)
+    s3_client.put_object(Bucket=bucket, Key=key, Body=serialized_obj)
 
 
 def load_raw_data(aws_s3_client, bucket, key):
