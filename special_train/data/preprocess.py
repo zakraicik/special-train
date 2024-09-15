@@ -6,7 +6,12 @@ import numpy as np
 from boto3 import Session
 from sklearn.preprocessing import MinMaxScaler
 
-from special_train.utils import validate_timestamps, load_raw_data, save_numpy_to_s3
+from special_train.utils import (
+    validate_timestamps,
+    load_raw_data,
+    save_numpy_to_s3,
+    convert_millisecond_to_date,
+)
 from special_train.config import (
     AWS_REGION,
     S3_ETHEREUM_FORECAST_BUCKET,
@@ -17,7 +22,7 @@ from special_train.config import (
     S3_Y_VAL_KEY,
     S3_X_TEST_KEY,
     S3_Y_TEST_KEY,
-    WINDOW_LENGTH,
+    N,
     FEATURES,
 )
 
@@ -27,14 +32,12 @@ logger = logging.getLogger(__name__)
 
 def split_data(df, train_size):
 
-    logger.info("Splitting datasets...")
-
     assert 0 < train_size < 1, "train_size must be a float between 0 and 1"
 
     n = len(df)
     train_end = int(train_size * n)
     remainder = n - train_end
-    val_end = train_end + remainder // 2
+    val_end = train_end + int(remainder * (2 / 3))
 
     train_df = df.iloc[:train_end]
     val_df = df.iloc[train_end:val_end]
@@ -43,65 +46,45 @@ def split_data(df, train_size):
     return train_df, val_df, test_df
 
 
-def add_technical_features(df):
+def normalize_data(df, features, target):
+    df.dropna(inplace=True)
 
-    df.loc[:, "SMA_10"] = talib.SMA(df["close"], timeperiod=10)
-    df.loc[:, "SMA_30"] = talib.SMA(df["close"], timeperiod=30)
-
-    return df
-
-
-def normalize_data(df, features, target_column):
-
-    sma_columns = ["SMA_10", "SMA_30"]
-
-    price_column = "close"
-
-    df[price_column] = df[price_column] / df[price_column].iloc[0] - 1
-    df["SMA_10"] = df["SMA_10"] / df["SMA_10"].iloc[0] - 1
-    df["SMA_30"] = df["SMA_30"] / df["SMA_30"].iloc[0] - 1
-
-    df = df[features + sma_columns + [target_column]]
-
-    train_df, val_df, test_df = split_data(df, 0.8)
+    train_df, val_df, test_df = split_data(df, 0.70)
 
     train_df = train_df.copy()
     val_df = val_df.copy()
     test_df = test_df.copy()
 
-    scaler = MinMaxScaler()
+    feature_scaler = MinMaxScaler()
+    target_scaler = MinMaxScaler()
 
-    train_df[features + sma_columns] = scaler.fit_transform(
-        train_df[features + sma_columns]
+    train_df[features] = feature_scaler.fit_transform(train_df[features])
+    val_df[features] = feature_scaler.transform(val_df[features])
+    test_df[features] = feature_scaler.transform(test_df[features])
+
+    train_df[target] = target_scaler.fit_transform(train_df[[target]])
+    val_df[target] = target_scaler.transform(val_df[[target]])
+    test_df[target] = target_scaler.transform(test_df[[target]])
+
+    return train_df, val_df, test_df, feature_scaler, target_scaler
+
+
+def create_multistep_dataset(df, sequence_length, features, target, N):
+    data = df[features].values
+    target_data = df[target].values
+
+    num_sequences = len(df) - sequence_length - N + 1
+
+    sequences = np.array([data[i : i + sequence_length] for i in range(num_sequences)])
+
+    targets = np.array(
+        [
+            target_data[i + sequence_length : i + sequence_length + N]
+            for i in range(num_sequences)
+        ]
     )
 
-    val_df[features + sma_columns] = scaler.transform(val_df[features + sma_columns])
-    test_df[features + sma_columns] = scaler.transform(test_df[features + sma_columns])
-
-    return train_df, val_df, test_df
-
-
-def create_sliding_windows(df, feature_columns, target_column, win_len=10):
-
-    features = df[feature_columns].values
-    targets = df[target_column].values
-
-    X, y = [], []
-
-    for i in range(len(df) - win_len):
-
-        X_window = features[i : i + win_len]
-        y_value = targets[i + win_len]
-
-        X.append(X_window)
-        y.append(y_value)
-
-    X = np.array(X)
-    y = np.array(y)
-
-    y = y.reshape(-1)
-
-    return X, y
+    return sequences, targets
 
 
 if __name__ == "__main__":
@@ -124,33 +107,25 @@ if __name__ == "__main__":
 
     df = df.astype(float)
 
-    df = validate_timestamps(df)
+    df.index = df.index.to_series().apply(convert_millisecond_to_date)
+
+    logger.info(f"Filtering Records")
+
+    df = df[df.index >= "2024-01-01"]
 
     logger.info(f"Creating Target")
 
-    df["target"] = df["close"]
-
-    logger.info(f"Creating Technical Features")
-
-    df = add_technical_features(df)
-
-    df.dropna(inplace=True)
+    df.loc[:, "target"] = df.loc[:, "close"]
 
     logger.info(f"Splitting and Scaling Datasets")
 
-    train_df, val_df, test_df = normalize_data(df, FEATURES, "target")
-
-    X_train, y_train = create_sliding_windows(
-        train_df, FEATURES + ["SMA_10", "SMA_30"], "target", WINDOW_LENGTH
+    train_df, val_df, test_df, feature_scaler, target_scaler = normalize_data(
+        df, FEATURES, "target"
     )
 
-    X_val, y_val = create_sliding_windows(
-        val_df, FEATURES + ["SMA_10", "SMA_30"], "target", WINDOW_LENGTH
-    )
-
-    X_test, y_test = create_sliding_windows(
-        test_df, FEATURES + ["SMA_10", "SMA_30"], "target", WINDOW_LENGTH
-    )
+    X_train, y_train = create_multistep_dataset(train_df, 12, FEATURES, "target", N)
+    X_val, y_val = create_multistep_dataset(val_df, 12, FEATURES, "target", N)
+    X_test, y_test = create_multistep_dataset(test_df, 12, FEATURES, "target", N)
 
     logger.info(
         f"Writing X_train to s3://{S3_ETHEREUM_FORECAST_BUCKET}/{S3_X_TRAIN_KEY}"
