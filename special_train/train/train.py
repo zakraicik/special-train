@@ -40,13 +40,13 @@ early_stopping = EarlyStopping(
     patience=10, monitor="val_loss", restore_best_weights=True
 )
 
-reduce_lr = ReduceLROnPlateau(
-    monitor="val_loss",
-    factor=0.5,
-    patience=5,
-    min_lr=1e-6,
-    verbose=1,
-)
+# reduce_lr = ReduceLROnPlateau(
+#     monitor="val_loss",
+#     factor=0.5,
+#     patience=5,
+#     min_lr=1e-6,
+#     verbose=1,
+# )
 
 
 def build_model(hp):
@@ -115,7 +115,7 @@ def tune_model(
         epochs=epochs,
         batch_size=batch_size,
         validation_data=(X_val, y_val),
-        callbacks=[early_stopping, reduce_lr],
+        callbacks=[early_stopping],
     )
 
     best_hp = tuner.get_best_hyperparameters(num_trials=1)[0]
@@ -144,21 +144,14 @@ if __name__ == "__main__":
         y_val,
         epochs=100,
         batch_size=32,
-        max_trials=1,
+        max_trials=20,
         executions_per_trial=1,
     )
 
-    model = tuner.hypermodel.build(best_hp)
-
-    X_combined = np.concatenate((X_train, X_val), axis=0)
-    y_combined = np.concatenate((y_train, y_val), axis=0)
-
-    history = model.fit(
-        X_combined,
-        y_combined,
-        epochs=100,
-        batch_size=32,
-        validation_split=0.1,
-        shuffle=False,
-        callbacks=[early_stopping, reduce_lr],
+    best_model = tuner.get_best_models(num_models=1)[0]
+    best_model.compile(
+        optimizer=Adam(learning_rate=best_hp.get("learning_rate"), clipvalue=1),
+        loss="mae",
+        metrics=["mae", "mse", "mape"],
     )
+    save_model_to_s3(best_model, aws_s3_client, S3_ETHEREUM_FORECAST_BUCKET)

@@ -5,6 +5,9 @@ import pandas as pd
 import numpy as np
 import pickle
 import io
+import os
+import tempfile
+import tensorflow as tf
 
 from datetime import datetime
 from io import BytesIO
@@ -87,6 +90,65 @@ def parquet_to_s3(df, bucket, key, aws_s3_client):
 def save_object_to_s3(s3_client, obj, bucket, key):
     serialized_obj = pickle.dumps(obj)
     s3_client.put_object(Bucket=bucket, Key=key, Body=serialized_obj)
+
+
+def load_object_from_s3(s3_client, bucket, key):
+    response = s3_client.get_object(Bucket=bucket, Key=key)
+    serialized_obj = response["Body"].read()
+    obj = pickle.loads(serialized_obj)
+    return obj
+
+
+def save_model_to_s3(model, aws_s3_client, bucket):
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+
+        temp_path = os.path.join(temp_dir, f"{timestamp}.keras")
+        model.save(temp_path)
+
+        s3_file = f"models/{timestamp}.keras"
+        aws_s3_client.upload_file(temp_path, bucket, s3_file)
+
+
+def _most_recent_model(aws_s3_client, bucket):
+
+    response = aws_s3_client.list_objects_v2(Bucket=bucket, Prefix="models/")
+
+    if "Contents" not in response:
+        return None
+
+    model_files = {}
+    for obj in response["Contents"]:
+        obj_key = obj["Key"]
+        try:
+            date_str = obj_key.split(".")[0].split("/")[-1]
+            model_date = datetime.strptime(date_str, "%Y%m%d_%H%M%S")
+            model_files[model_date] = obj_key
+        except ValueError:
+            continue
+
+    if model_files:
+        most_recent_date = max(model_files.keys())
+        most_recent_file = model_files[most_recent_date]
+        return most_recent_file.split("/")[-1]
+    else:
+        return None
+
+
+def load_model_from_s3(aws_s3_client, bucket, model_name=None):
+
+    if model_name is not None:
+        pass
+    else:
+        model_name = _most_recent_model(aws_s3_client, bucket)
+
+    with tempfile.NamedTemporaryFile(suffix=".keras", delete=False) as temp_file:
+        key = f"models/{model_name}"
+        aws_s3_client.download_file(bucket, key, temp_file.name)
+        model = tf.keras.models.load_model(temp_file.name)
+    os.unlink(temp_file.name)
+    return model
 
 
 def load_raw_data(aws_s3_client, bucket, key):
