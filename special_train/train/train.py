@@ -144,7 +144,7 @@ if __name__ == "__main__":
         y_val,
         epochs=100,
         batch_size=32,
-        max_trials=1,
+        max_trials=30,
         executions_per_trial=1,
     )
 
@@ -162,3 +162,5 @@ if __name__ == "__main__":
         shuffle=False,
         callbacks=[early_stopping, reduce_lr],
     )
+
+    save_model_to_s3(model, aws_s3_client, S3_ETHEREUM_FORECAST_BUCKET)
