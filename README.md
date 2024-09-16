@@ -16,7 +16,7 @@ The following graph shows the predicted vs. actual Ethereum prices. The tan line
 2. **`train`**: Contains scripts to train the model.
 
    - **`train.py`**: Uses Keras Tuner to create an LSTM model that minimizes validation loss (Mean Absolute Error, MAE). The best model is saved to S3 and can be used for predictions in other scripts.
-   - **Note:** There is a separate branch named `sagemaker-training` for executing a training job using AWS SageMaker instead of training locally.
+   - **Note:** There is a separate branch named `sagemaker-training` for executing a training job using AWS SageMaker instead of training locally. Training in this environment will not leverage the keras tuner, as it can get expensive.
 
 3. **`eval`**: Contains scripts to evaluate the model.
    - **`eval.py`**: Generates plots on a test set (data the model has never seen) to visualize the relationship between actual Ethereum prices and predicted prices.
